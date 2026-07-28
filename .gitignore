@@ -1,0 +1,20 @@
+# Ignore everything by default
+*
+*/
+
+# Whitelist .gitignore and example files
+!.gitignore
+!README.md
+!.env.example
+!outreach_queue.example.csv
+!requirements.txt
+
+# Whitelist pipeline core scripts
+!applicant.py
+!apify_scraper.py
+!config.py
+!cover_letter_generator.py
+!email_sender.py
+!exa_search.py
+!outreach_pipeline.py
+!followup_pipeline.py
