@@ -169,7 +169,12 @@ class CoverLetterGenerator:
                             "resources", "hiring", "services", "solutions", "technology", "tech"]
         is_generic = any(k in salutation_name.lower() for k in generic_keywords)
 
-        if not is_generic and len(words) >= 2:
+        if is_generic:
+            # The address block reads "The Recruiting and Technology Team", but
+            # the salutation must not: "Dear The Recruiting Team," is not English.
+            if salutation_name.lower().startswith("the "):
+                salutation_name = salutation_name[4:]
+        elif len(words) >= 2:
             first = words[0]
             last = words[-1]
             if first.lower() in ["mr", "mr.", "ms", "ms.", "mrs", "mrs.", "dr", "dr.", "prof", "prof."]:
