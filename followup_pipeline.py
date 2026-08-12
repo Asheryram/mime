@@ -70,7 +70,10 @@ def send_followup_email(sender_email, password, r, dry_run=False):
     msg = EmailMessage()
     msg["From"] = sender_email
     msg["To"] = recipient_email
-    msg["Subject"] = f"Re: {applicant.EMAIL_SUBJECT}"
+    # Must echo the subject the original pitch used, or Gmail treats the
+    # follow-up as a new conversation even with the threading headers set.
+    track = r.get("track") or applicant.DEFAULT_TRACK
+    msg["Subject"] = f"Re: {applicant.subject_for(track)}"
     msg["Message-ID"] = make_msgid(domain=sender_email.split("@")[-1])
     msg["Date"] = formatdate(localtime=True)
 
@@ -83,7 +86,7 @@ def send_followup_email(sender_email, password, r, dry_run=False):
         msg["References"] = original_id
 
     msg.set_content(
-        applicant.build_followup_body(company_name, recipient_name, r["date_sent"])
+        applicant.build_followup_body(company_name, recipient_name, r["date_sent"], track)
     )
 
     if os.path.exists(CV_PATH):

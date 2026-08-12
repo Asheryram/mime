@@ -22,7 +22,8 @@ CV_PATH = applicant.CV_PATH
 QUEUE_FIELDS = [
     "company_name", "website", "email", "company_type",
     "recipient_name", "company_address", "status",
-    "date_added", "date_sent", "date_followup", "message_id"
+    "date_added", "date_sent", "date_followup", "message_id",
+    "track"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -61,6 +62,9 @@ def load_queue():
             # Backfill columns added after a queue was first created.
             for field in QUEUE_FIELDS:
                 row.setdefault(field, "")
+            # Rows predating the track column are the original campaign.
+            if not row["track"]:
+                row["track"] = applicant.DEFAULT_TRACK
             queue.append(row)
     return queue
 
@@ -71,7 +75,7 @@ def save_queue(queue):
         for row in queue:
             writer.writerow(row)
 
-def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending"):
+def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending", track=None):
     queue = load_queue()
     # Deduplicate by company name or website
     for row in queue:
@@ -91,7 +95,8 @@ def add_to_queue(company_name, website, email="", company_type="general_startup"
         "date_added": datetime.now().strftime("%Y-%m-%d"),
         "date_sent": "",
         "date_followup": "",
-        "message_id": ""
+        "message_id": "",
+        "track": (track or applicant.DEFAULT_TRACK).strip().lower()
     }
     queue.append(new_row)
     save_queue(queue)
@@ -256,7 +261,7 @@ def clean_company_name(title):
     return name
 
 
-def run_exa_search(query_str, limit=15):
+def run_exa_search(query_str, limit=15, track=None):
     """
     Searches for new companies using Exa and adds them to queue.
 
@@ -311,7 +316,8 @@ def run_exa_search(query_str, limit=15):
             company_type=ctype,
             recipient="The Recruiting and Technology Team",
             address="Accra, Ghana",
-            status="Review" if review else "Pending"
+            status="Review" if review else "Pending",
+            track=track
         )
         if success:
             added_count += 1
@@ -470,11 +476,12 @@ def run_generate_letters():
     for r in target_rows:
         generator.generate_pdf(
             company_name=r["company_name"],
-            role_title=applicant.ROLE_TITLE,
+            role_title=applicant.get_track(r["track"])["role_title"],
             company_type=r["company_type"],
             recipient_name=r["recipient_name"],
             company_address=r["company_address"],
-            output_path=letter_path(r["company_name"])
+            output_path=letter_path(r["company_name"]),
+            track=r["track"]
         )
     print("[Pipeline] Cover letter generation complete.")
 
@@ -511,11 +518,12 @@ def run_send_emails():
                 os.makedirs(LETTERS_DIR)
             generator.generate_pdf(
                 company_name=r["company_name"],
-                role_title=applicant.ROLE_TITLE,
+                role_title=applicant.get_track(r["track"])["role_title"],
                 company_type=r["company_type"],
                 recipient_name=r["recipient_name"],
                 company_address=r["company_address"],
-                output_path=pdf_path
+                output_path=pdf_path,
+                track=r["track"]
             )
 
         # Send. Returns the Message-ID on success so the follow-up can thread.
@@ -524,7 +532,9 @@ def run_send_emails():
             company_name=r["company_name"],
             cover_letter_path=pdf_path,
             cv_path=CV_PATH,
-            role_title=applicant.ROLE_TITLE
+            role_title=applicant.get_track(r["track"])["role_title"],
+            subject=applicant.subject_for(r["track"]),
+            body=applicant.build_outreach_body(r["company_name"], r["track"])
         )
 
         if message_id:
@@ -619,13 +629,28 @@ if __name__ == "__main__":
             sys.exit(1)
         import_from_markdown(sys.argv[2])
     elif cmd == "search":
+        # Optional trailing "--track <name>" tags every row this run adds.
+        argv = sys.argv[:]
+        track = None
+        if "--track" in argv:
+            i = argv.index("--track")
+            if i + 1 < len(argv):
+                track = argv[i + 1]
+                del argv[i:i + 2]
+            else:
+                print("Usage: --track requires a value (devops | software | sysadmin)")
+                sys.exit(1)
+        if track and track.strip().lower() not in applicant.TRACKS:
+            print(f"Unknown track '{track}'. Choose from: {', '.join(applicant.TRACKS)}")
+            sys.exit(1)
+
         q = "tech startup software development company Accra Ghana"
         lim = 15
-        if len(sys.argv) > 2:
-            q = sys.argv[2]
-        if len(sys.argv) > 3:
-            lim = int(sys.argv[3])
-        run_exa_search(q, lim)
+        if len(argv) > 2:
+            q = argv[2]
+        if len(argv) > 3:
+            lim = int(argv[3])
+        run_exa_search(q, lim, track=track)
     elif cmd == "scrape":
         run_apify_scrape()
     elif cmd == "generate":
