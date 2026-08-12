@@ -18,12 +18,16 @@ class EmailSender:
             raise ValueError("SENDER_EMAIL or GMAIL_APP_PASSWORD is missing in configuration.")
 
     def send_outreach_email(self, recipient_email, company_name, cover_letter_path, cv_path,
-                            role_title=applicant.ROLE_TITLE):
+                            role_title=applicant.ROLE_TITLE, subject=None, body=None):
         """
         Sends an outreach email with the CV and cover letter attached.
 
         Returns the message's Message-ID on success, or None on failure. The
         caller should persist that ID so the follow-up can thread against it.
+
+        `subject` and `body` override the campaign template, so an application
+        answering one specific advertised role can reuse this sender rather than
+        duplicating the SMTP, attachment, and Message-ID handling.
         """
         if not recipient_email:
             print("[EmailSender] Error: Recipient email is empty.")
@@ -35,10 +39,10 @@ class EmailSender:
         msg = EmailMessage()
         msg["From"] = self.sender_email
         msg["To"] = recipient_email
-        msg["Subject"] = applicant.EMAIL_SUBJECT
+        msg["Subject"] = subject or applicant.EMAIL_SUBJECT
         msg["Message-ID"] = message_id
         msg["Date"] = formatdate(localtime=True)
-        msg.set_content(applicant.build_outreach_body(company_name))
+        msg.set_content(body or applicant.build_outreach_body(company_name))
 
         # Attach Cover Letter
         if os.path.exists(cover_letter_path):

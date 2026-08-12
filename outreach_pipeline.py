@@ -184,6 +184,44 @@ def is_job_board(domain):
     return any(host.endswith("." + d) for d in JOB_BOARD_DOMAINS)
 
 
+def name_matches_domain(name, domain):
+    """
+    True if a company name plausibly belongs to the domain it was found on.
+
+    Exa often returns a directory listing, blog post, or careers aggregator that
+    is *about* a company rather than owned by it - "Hubtel" found on
+    founderstackafrica.com. Left alone, that row scrapes the wrong site's email
+    and sends a letter addressed to Hubtel somewhere else entirely, which is far
+    worse than a merely ugly company name.
+
+    Acronym domains (ghipss.net for "Ghana Interbank Payment...") fail this test
+    too, so a mismatch marks the row for review rather than dropping it.
+    """
+    host = urlparse(domain).netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    # Second-level label: "careers.vodafone.com" -> "vodafone"
+    parts = [p for p in host.split(".") if p not in ("com", "net", "org", "io", "co", "gh", "africa", "tech")]
+    # Alphanumeric only, so "swift-infra" compares equal to "swiftinfra".
+    label = "".join(c for c in "".join(parts) if c.isalnum())
+
+    squashed = "".join(c for c in name.lower() if c.isalnum())
+    if not label or not squashed:
+        return False
+
+    # Whole name inside the domain ("De-MannyTech Consult" / demannytechconsult),
+    # or the domain inside the name ("Telecel Ghana" / telecel).
+    if squashed in label or label in squashed:
+        return True
+
+    # Otherwise any distinctive word of the name appearing in the domain.
+    stop = {"limited", "company", "ghana", "group", "technologies", "technology",
+            "solutions", "services", "systems", "consult", "consulting", "africa"}
+    words = [w for w in "".join(c if c.isalnum() else " " for c in name.lower()).split()
+             if len(w) >= 4 and w not in stop]
+    return any(w in label for w in words)
+
+
 def clean_company_name(title):
     """
     Reduce a page <title> to a company name.
@@ -249,6 +287,11 @@ def run_exa_search(query_str, limit=15):
             host = urlparse(c["domain"]).netloc.lower()
             name = host[4:] if host.startswith("www.") else host
             print(f"[Pipeline] Unusable title for {c['domain']} - queued as '{name}' for review.")
+            needs_review += 1
+        elif not name_matches_domain(name, c["domain"]):
+            # The page is probably about this company rather than theirs.
+            review = True
+            print(f"[Pipeline] '{name}' does not match {c['domain']} - queued for review.")
             needs_review += 1
 
         ctype = "general_startup"

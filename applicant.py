@@ -30,7 +30,7 @@ GITHUB_URL = "https://github.com/Asheryram"
 GITHUB_LABEL = "github.com/Asheryram"
 
 # Your master CV. Place this PDF in the repository root.
-CV_PATH = "Asher_Yram_Tetteh-Abotsi_CV.pdf"
+CV_PATH = "YramAsherTettehAbotsi_resume.pdf"
 
 # Prefix for generated cover letter filenames (no spaces).
 FILE_SLUG = "Asher_Yram_Tetteh-Abotsi"

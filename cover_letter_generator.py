@@ -116,9 +116,15 @@ class CoverLetterGenerator:
 
         return paragraphs
 
-    def generate_pdf(self, company_name, role_title, company_type, recipient_name, company_address, output_path):
+    def generate_pdf(self, company_name, role_title, company_type, recipient_name, company_address, output_path,
+                     paragraphs=None):
         """
         Generates a professionally styled PDF cover letter.
+
+        `paragraphs` overrides the sector template with body text written for one
+        specific advertised role, so a letter answering a real job description
+        can still carry the same letterhead as the campaign letters. Strings are
+        inserted as ReportLab markup, so escape any caller-supplied text.
         """
         doc = SimpleDocTemplate(
             output_path, pagesize=A4,
@@ -185,7 +191,7 @@ class CoverLetterGenerator:
         story.append(Paragraph(f"Dear {escape(salutation_name)},", styles["body"]))
 
         # Body Paragraphs
-        body_paras = self.get_template_paragraphs(company_name, role_title, company_type)
+        body_paras = paragraphs or self.get_template_paragraphs(company_name, role_title, company_type)
         for p in body_paras:
             story.append(Paragraph(p, styles["body"]))
 
