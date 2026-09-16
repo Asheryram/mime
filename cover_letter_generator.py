@@ -38,7 +38,7 @@ class CoverLetterGenerator:
         return [
             f"I am writing to express my strong interest in the {role_title} position at "
             f"{company_name}. As a Computer Science graduate of KNUST, I build backend services "
-            f"and full-stack products, and I deploy what I build &ndash; the same hands that write "
+            f"and full-stack products, and I deploy what I build too: the same hands that write "
             f"the service write its pipeline and its infrastructure.",
 
             "Recent work that speaks to the role:",
@@ -47,7 +47,7 @@ class CoverLetterGenerator:
 
             "<b>&bull;&#160;&#160;Microservices:</b> I designed a school management system as discrete auth, user, school, communication, and notification services behind an API gateway, orchestrated with Docker Compose and documented as inter-service API contracts rather than tribal knowledge.",
 
-            "<b>&bull;&#160;&#160;Full-Stack Delivery:</b> I developed a React and Vite frontend generating client-facing PDF proposals, and refactored a legacy Python codebase to cut redundancy 50% while improving readability &ndash; working across Java, Python, TypeScript, C++, and SQL/NoSQL as the problem requires.",
+            "<b>&bull;&#160;&#160;Full-Stack Delivery:</b> I developed a React and Vite frontend generating client-facing PDF proposals, and refactored a legacy Python codebase to cut redundancy 50% while improving readability. I work across Java, Python, TypeScript, C++, and SQL/NoSQL as the problem requires.",
 
             f"Thank you for your time and consideration. I would welcome the opportunity to "
             f"discuss how my backend engineering skills, product focus, and adaptability can "
@@ -100,8 +100,8 @@ class CoverLetterGenerator:
                 "My AWS production experience transfers directly, because the automation I write is declarative "
                 "and provider-agnostic:"
             )
-            b1 = "<b>&bull;&#160;&#160;Cloud-Agnostic IaC:</b> I provision infrastructure as modular Terraform &ndash; 55 resources spanning VPC, EC2, Lambda, EventBridge, and SNS, with tfsec scanning and GitHub Actions CI. Moving that to Azure or GCP changes the provider schema, not the automation logic."
-            b2 = "<b>&bull;&#160;&#160;Platform Trade-off Analysis:</b> I deployed the same multi-service application to both ECS Fargate and EKS to benchmark orchestrator cost and performance, packaging the Kubernetes workloads as Helm charts &ndash; so I can advise clients on platform choice with real numbers rather than preference."
+            b1 = "<b>&bull;&#160;&#160;Cloud-Agnostic IaC:</b> I provision infrastructure as modular Terraform: 55 resources spanning VPC, EC2, Lambda, EventBridge, and SNS, with tfsec scanning and GitHub Actions CI. Moving that to Azure or GCP changes the provider schema, not the automation logic."
+            b2 = "<b>&bull;&#160;&#160;Platform Trade-off Analysis:</b> I deployed the same multi-service application to both ECS Fargate and EKS to benchmark orchestrator cost and performance, packaging the Kubernetes workloads as Helm charts, so I can advise clients on platform choice with real numbers rather than preference."
             b3 = "<b>&bull;&#160;&#160;Cost &amp; Governance Advisory:</b> I ran a FinOps cost audit on an inherited AWS account, automating zombie-asset detection and budget governance through Terraform, turning a one-off clean-up into an enforced standard."
             bullets = [b1, b2, b3]
 
@@ -110,7 +110,7 @@ class CoverLetterGenerator:
                 "Transactional platforms demand reliability, provable security, and tested recoverability. "
                 "I treat those as build-time requirements rather than later hardening:"
             )
-            b1 = "<b>&bull;&#160;&#160;Secure Software Supply Chain:</b> I engineered a pipeline built on immutable artifacts (CodeArtifact, ECR image scanning) with security gates &ndash; GuardDuty, Trivy, and SonarQube &ndash; enforced before any code reaches production."
+            b1 = "<b>&bull;&#160;&#160;Secure Software Supply Chain:</b> I engineered a pipeline built on immutable artifacts (CodeArtifact, ECR image scanning) with security gates (GuardDuty, Trivy, and SonarQube) enforced before any code reaches production."
             b2 = "<b>&bull;&#160;&#160;Tested Disaster Recovery:</b> I built a disaster recovery lab with cross-region RDS failover, achieving a recovery time objective of 30 minutes or less under test rather than on paper."
             b3 = "<b>&bull;&#160;&#160;Shift-Left IaC Security:</b> Beyond tfsec scanning in GitHub Actions, I built an AI-assisted Terraform change reviewer (n8n with the Claude and OpenAI APIs) that summarises infrastructure diffs and flags security vulnerabilities on every pull request."
             bullets = [b1, b2, b3]
@@ -140,7 +140,7 @@ class CoverLetterGenerator:
                 "In a growing engineering team, cloud spend and engineering time are the two scarcest "
                 "resources. I bring automation that protects both:"
             )
-            b1 = "<b>&bull;&#160;&#160;Cost Control:</b> I cut infrastructure cost 60% through automated instance scheduling, and ran a FinOps audit that automated zombie-asset detection and budget governance in Terraform &ndash; savings that hold rather than drift back."
+            b1 = "<b>&bull;&#160;&#160;Cost Control:</b> I cut infrastructure cost 60% through automated instance scheduling, and ran a FinOps audit that automated zombie-asset detection and budget governance in Terraform, so the savings hold rather than drift back."
             b2 = "<b>&bull;&#160;&#160;Delivery Velocity:</b> I build Jenkins and GitHub Actions pipelines with Docker and Terraform that take a service from commit to running container with tests, image scanning, and observability already attached, so engineers ship without hand-holding infrastructure."
             b3 = "<b>&bull;&#160;&#160;Applied AI in Operations:</b> I built an AI-assisted Terraform reviewer (n8n with the Claude and OpenAI APIs) that flags security issues on every pull request, and a Bedrock-backed system that writes its own root-cause reports during incidents."
             bullets = [b1, b2, b3]
@@ -188,14 +188,17 @@ class CoverLetterGenerator:
         # Letterhead
         story.append(Paragraph(escape(applicant.FULL_NAME).upper(), styles["name"]))
         story.append(Paragraph(escape(applicant.HEADLINE), styles["sub"]))
-        story.append(Paragraph(
-            f"{escape(applicant.PHONE)}&#160;&#160;|&#160;&#160;{escape(applicant.EMAIL)}&#160;&#160;|&#160;&#160;"
+        contact_parts = [
+            escape(applicant.PHONE),
+            escape(applicant.EMAIL),
             f'<a href="{applicant.LINKEDIN_URL}" color="{self.primary_color.hexval()}">'
-            f"{escape(applicant.LINKEDIN_LABEL)}</a>&#160;&#160;|&#160;&#160;"
+            f"{escape(applicant.LINKEDIN_LABEL)}</a>",
             f'<a href="{applicant.GITHUB_URL}" color="{self.primary_color.hexval()}">'
-            f"{escape(applicant.GITHUB_LABEL)}</a>&#160;&#160;|&#160;&#160;{escape(applicant.LOCATION)}",
-            styles["contact"]
-        ))
+            f"{escape(applicant.GITHUB_LABEL)}</a>",
+        ]
+        if applicant.LOCATION:
+            contact_parts.append(escape(applicant.LOCATION))
+        story.append(Paragraph("&#160;&#160;|&#160;&#160;".join(contact_parts), styles["contact"]))
 
         # Orange divider
         story.append(HRFlowable(width="100%", thickness=1.5, color=self.secondary_color, spaceAfter=8, spaceBefore=4))

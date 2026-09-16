@@ -16,7 +16,7 @@ from config import config
 FULL_NAME = "Asher Yram Tetteh-Abotsi"
 HEADLINE = "Cloud & DevOps Engineer"
 ROLE_TITLE = "Cloud & DevOps Engineer"
-LOCATION = "Takoradi, Ghana"
+LOCATION = ""
 
 # Set APPLICANT_PHONE and APPLICANT_EMAIL in .env. EMAIL falls back to the
 # SENDER_EMAIL already configured for SMTP, since they are normally the same
@@ -148,10 +148,11 @@ def subject_for(track=None):
 
 def signature_block():
     """Plain-text sign-off shared by the cold email and the follow-up."""
+    location_line = f"{LOCATION}\n" if LOCATION else ""
     return (
         f"Best regards,\n\n"
         f"{FULL_NAME}\n"
-        f"{LOCATION}\n"
+        f"{location_line}"
         f"Phone: {PHONE}\n"
         f"LinkedIn: {LINKEDIN_URL}\n"
         f"GitHub: {GITHUB_URL}\n"
