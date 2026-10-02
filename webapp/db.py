@@ -9,8 +9,21 @@ import psycopg2
 import psycopg2.extras
 
 
+def _connection_string():
+    # Vercel's own Postgres/Neon/Supabase integrations each inject the URL
+    # under a slightly different name depending on which one you add from the
+    # Storage tab - check the common ones instead of requiring an exact name.
+    for key in ("DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL"):
+        if os.environ.get(key):
+            return os.environ[key]
+    raise RuntimeError(
+        "No database connection string found. Set DATABASE_URL (or POSTGRES_URL) "
+        "in the deployment's environment variables."
+    )
+
+
 def _connect():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    return psycopg2.connect(_connection_string())
 
 
 def _ensure_table(conn):
