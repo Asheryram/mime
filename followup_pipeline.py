@@ -43,6 +43,13 @@ def get_followup_candidates(today=None):
         comp_name_lower = r["company_name"].lower().strip()
         email_lower = r["email"].lower().strip()
 
+        # Per-row flags set from the triage dashboard take priority; the
+        # hardcoded lists below still work for anyone editing the CSV by hand.
+        if r.get("replied", "").strip().lower() == "yes":
+            continue
+        if r.get("bounced", "").strip().lower() == "yes":
+            continue
+
         if REPLIED_COMPANIES and any(rep in comp_name_lower for rep in REPLIED_COMPANIES):
             continue
 

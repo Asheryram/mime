@@ -23,7 +23,7 @@ QUEUE_FIELDS = [
     "company_name", "website", "email", "company_type",
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
-    "track"
+    "track", "lead_reviewed", "replied", "bounced"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -451,22 +451,23 @@ def run_apify_scrape():
 
 def run_auto_approve():
     """
-    Promotes "Pending" rows with a usable, scraped email straight to "Approved".
-
-    This is the unattended substitute for the manual review step the README
-    describes ("Pending -> Approved is manual and deliberate"). It exists only
-    for the scheduled CI pipeline, which runs with nobody watching; a "Review"
-    row (bad company-name match) is left alone either way, since fixing a wrong
-    name needs a human regardless of how approval happens.
+    Promotes "Pending" rows with a usable, scraped email straight to "Approved",
+    but only once a human has flipped "lead_reviewed" to "yes" on the triage
+    dashboard. This is the unattended substitute for the manual review step the
+    README describes ("Pending -> Approved is manual and deliberate"): the CI
+    pipeline runs with nobody watching, so a fresh lead sits reviewable instead
+    of being approved sight unseen. A "Review" row (bad company-name match) is
+    left alone either way, since fixing a wrong name needs a human regardless.
     """
     queue = load_queue()
     approved = 0
     for r in queue:
-        if r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found":
+        if (r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found"
+                and r["lead_reviewed"].strip().lower() == "yes"):
             r["status"] = "Approved"
             approved += 1
     save_queue(queue)
-    print(f"[Pipeline] Auto-approved {approved} row(s) with a scraped email.")
+    print(f"[Pipeline] Auto-approved {approved} reviewed row(s).")
 
 def letter_filename(company_name):
     """Cover letter PDF filename for a company. Single definition, used everywhere."""

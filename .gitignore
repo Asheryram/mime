@@ -23,3 +23,13 @@
 !.github/
 !.github/workflows/
 !.github/workflows/daily-pipeline.yml
+
+# Whitelist the triage dashboard webapp (secrets live in Vercel env vars, not here)
+!webapp/
+!webapp/*.py
+!webapp/*.txt
+!webapp/*.json
+!webapp/templates/
+!webapp/templates/*.html
+!webapp/api/
+!webapp/api/*.py
