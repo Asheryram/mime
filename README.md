@@ -92,12 +92,13 @@ Delete the `Example Tech` row before your first real run.
 | :--- | :--- | :--- |
 | **Search** | `py outreach_pipeline.py search "[query]" [limit]` | Find new target companies, e.g. `search "fintech startups in Lagos" 10`. |
 | **Scrape** | `py outreach_pipeline.py scrape` | Resolves missing websites and crawls up to 5 domains per run for contact emails. |
+| **Auto-approve** | `py outreach_pipeline.py auto-approve` | Promotes every `Pending` row with a scraped email straight to `Approved`, skipping manual review. For the scheduled CI pipeline below; not recommended for interactive use. |
 | **Generate** | `py outreach_pipeline.py generate` | Compiles cover letter PDFs into `generated_letters/` for review. |
 | **Send** | `py outreach_pipeline.py send` | Emails up to 15 companies marked `Approved` and marks them `Sent`. |
 | **Status** | `py outreach_pipeline.py status` | Queue counts by status. |
 | **Import** | `py outreach_pipeline.py import list.md` | Imports a curated markdown list (`## Section` sets sector, `### 1. Company` adds a row). |
 
-Only `send` transmits anything. `search`, `scrape`, `generate`, and `status` are all safe to run freely.
+Only `send` transmits anything. `search`, `scrape`, `generate`, and `status` are all safe to run freely. `auto-approve` removes the manual gate, so treat it the same as `send`.
 
 ### 🔁 Running follow-ups
 
@@ -116,6 +117,20 @@ Follow-ups attach `In-Reply-To` and `References` headers built from the `message
 Two exclusion lists at the top of `followup_pipeline.py` are worth maintaining as your campaign runs:
 *   `BOUNCED_DOMAINS` &mdash; add domains that hard-bounce, so you stop spending sender reputation on them.
 *   `REPLIED_COMPANIES` &mdash; add companies that reply, so the automation never chases a live conversation.
+
+---
+
+## ⏰ Scheduled CI (fully unattended)
+
+`.github/workflows/daily-pipeline.yml` runs the entire campaign once a day with no human in the loop: search, scrape, `auto-approve`, generate, send, and follow-up, in that order. This deliberately removes the manual approval gate described above, so every row with a scraped email gets emailed automatically.
+
+Because this repo is public, the queue, log, and CV cannot live here (see `.gitignore`). They're mirrored instead in a private companion repo, `Asheryram/mime-state`, which the workflow pulls at the start of each run and pushes back to at the end via an SSH deploy key.
+
+Required repo secrets (Settings &rarr; Secrets and variables &rarr; Actions):
+*   `STATE_DEPLOY_KEY`: private half of a deploy key with write access on `mime-state` (already configured).
+*   `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `EXA_API_KEY`, `APIFY_API_TOKEN`, `APPLICANT_PHONE`, `APPLICANT_EMAIL`: same values as `.env`.
+
+Trigger a run manually from the Actions tab (`workflow_dispatch`) to test before waiting for the daily schedule.
 
 ---
 

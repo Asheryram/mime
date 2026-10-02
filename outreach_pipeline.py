@@ -449,6 +449,25 @@ def run_apify_scrape():
     save_queue(queue)
     print(f"[Pipeline] Scraping complete. Updated {updated_count} companies with email addresses.")
 
+def run_auto_approve():
+    """
+    Promotes "Pending" rows with a usable, scraped email straight to "Approved".
+
+    This is the unattended substitute for the manual review step the README
+    describes ("Pending -> Approved is manual and deliberate"). It exists only
+    for the scheduled CI pipeline, which runs with nobody watching; a "Review"
+    row (bad company-name match) is left alone either way, since fixing a wrong
+    name needs a human regardless of how approval happens.
+    """
+    queue = load_queue()
+    approved = 0
+    for r in queue:
+        if r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found":
+            r["status"] = "Approved"
+            approved += 1
+    save_queue(queue)
+    print(f"[Pipeline] Auto-approved {approved} row(s) with a scraped email.")
+
 def letter_filename(company_name):
     """Cover letter PDF filename for a company. Single definition, used everywhere."""
     safe_name = company_name.replace(" ", "_").replace("/", "_").replace(".", "")
@@ -610,6 +629,8 @@ Commands:
   search    - Search Exa for new tech companies (args: query [limit])
               e.g., py outreach_pipeline.py search "fintech companies in Accra Ghana" 10
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
+  auto-approve - Promote every Pending row with a scraped email to Approved (no human review;
+              for the scheduled CI pipeline only, not recommended for interactive use)
   generate  - Compile ReportLab cover letter PDFs for companies with emails in the queue
   send      - Send up to {DAILY_SEND_LIMIT} emails marked 'Approved' via SMTP with CV & Letter attachments
   status    - Show queue statistics and counts
@@ -653,6 +674,8 @@ if __name__ == "__main__":
         run_exa_search(q, lim, track=track)
     elif cmd == "scrape":
         run_apify_scrape()
+    elif cmd == "auto-approve":
+        run_auto_approve()
     elif cmd == "generate":
         run_generate_letters()
     elif cmd == "send":

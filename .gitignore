@@ -18,3 +18,8 @@
 !exa_search.py
 !outreach_pipeline.py
 !followup_pipeline.py
+
+# Whitelist the scheduled CI workflow (contains no secrets, only references them)
+!.github/
+!.github/workflows/
+!.github/workflows/daily-pipeline.yml
