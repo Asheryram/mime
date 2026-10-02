@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from functools import wraps
 
-from flask import Flask, request, session, redirect, url_for, render_template, flash
+from flask import Flask, request, session, redirect, url_for, render_template, flash, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -31,6 +31,7 @@ _load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB, generous for a CV PDF
 
 ALLOWED_EMAIL = os.environ.get("ALLOWED_EMAIL", "ashertettehabotsi@gmail.com").strip().lower()
 COMPANY_TYPES = ["fintech", "consultancy", "isp", "bank", "general_startup"]
@@ -189,6 +190,43 @@ def dashboard():
         total=len(companies),
         company_types=COMPANY_TYPES,
         tracks=TRACKS,
+    )
+
+
+@app.route("/cv", methods=["GET", "POST"])
+@login_required
+def cv():
+    if request.method == "POST":
+        f = request.files.get("cv")
+        if not f or not f.filename:
+            flash("Choose a PDF file first.", "error")
+            return redirect(url_for("cv"))
+        if not f.filename.lower().endswith(".pdf") or f.mimetype != "application/pdf":
+            flash("That doesn't look like a PDF.", "error")
+            return redirect(url_for("cv"))
+        data = f.read()
+        if not data.startswith(b"%PDF-"):
+            flash("That doesn't look like a valid PDF file.", "error")
+            return redirect(url_for("cv"))
+        state_repo.save_cv(data, "Update CV via triage dashboard")
+        flash("CV updated. The next pipeline run will attach this version.", "success")
+        return redirect(url_for("cv"))
+
+    data, _ = state_repo.get_cv()
+    size_kb = round(len(data) / 1024, 1) if data else None
+    return render_template("cv.html", size_kb=size_kb, has_cv=data is not None)
+
+
+@app.route("/cv/download")
+@login_required
+def cv_download():
+    data, _ = state_repo.get_cv()
+    if data is None:
+        flash("No CV on file yet.", "error")
+        return redirect(url_for("cv"))
+    return Response(
+        data, mimetype="application/pdf",
+        headers={"Content-Disposition": "inline; filename=current_cv.pdf"},
     )
 
 

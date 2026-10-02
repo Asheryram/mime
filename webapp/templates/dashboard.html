@@ -2,8 +2,6 @@
 {% block title %}Outreach Triage Desk{% endblock %}
 {% block body %}
 <style>
-  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
-
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .stat-tile { padding: 16px 18px; }
   .stat-num { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 500; line-height: 1; }
@@ -56,7 +54,10 @@
       <h1>Outreach Triage Desk</h1>
       <div class="tagline">Manual review for the mime job-outreach pipeline</div>
     </div>
-    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+    <div style="display:flex; gap:8px;">
+      <a href="{{ url_for('cv') }}" class="btn ghost">Your CV</a>
+      <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+    </div>
   </header>
 
   <div class="stat-grid">

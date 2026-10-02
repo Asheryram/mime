@@ -14,6 +14,7 @@ import requests
 REPO = "Asheryram/mime-state"
 API_ROOT = f"https://api.github.com/repos/{REPO}/contents"
 BRANCH = "main"
+CV_PATH = "YramAsherTettehAbotsi_resume.pdf"
 
 QUEUE_FIELDS = [
     "company_name", "website", "email", "company_type",
@@ -30,21 +31,20 @@ def _headers():
     }
 
 
-def _get_file(path):
-    """Returns (text_content, sha) or (None, None) if the file doesn't exist yet."""
+def _get_file_bytes(path):
+    """Returns (raw_bytes, sha) or (None, None) if the file doesn't exist yet."""
     r = requests.get(f"{API_ROOT}/{path}", headers=_headers(), params={"ref": BRANCH}, timeout=15)
     if r.status_code == 404:
         return None, None
     r.raise_for_status()
     data = r.json()
-    content = base64.b64decode(data["content"]).decode("utf-8")
-    return content, data["sha"]
+    return base64.b64decode(data["content"]), data["sha"]
 
 
-def _put_file(path, text_content, sha, message):
+def _put_file_bytes(path, raw_bytes, sha, message):
     payload = {
         "message": message,
-        "content": base64.b64encode(text_content.encode("utf-8")).decode("ascii"),
+        "content": base64.b64encode(raw_bytes).decode("ascii"),
         "branch": BRANCH,
     }
     if sha:
@@ -52,6 +52,16 @@ def _put_file(path, text_content, sha, message):
     r = requests.put(f"{API_ROOT}/{path}", headers=_headers(), json=payload, timeout=15)
     r.raise_for_status()
     return r.json()["content"]["sha"]
+
+
+def _get_file(path):
+    """Text-file convenience wrapper over _get_file_bytes. Returns (text, sha)."""
+    raw, sha = _get_file_bytes(path)
+    return (raw.decode("utf-8") if raw is not None else None), sha
+
+
+def _put_file(path, text_content, sha, message):
+    return _put_file_bytes(path, text_content.encode("utf-8"), sha, message)
 
 
 def load_queue():
@@ -73,6 +83,16 @@ def save_queue(rows, commit_message):
     for row in rows:
         writer.writerow(row)
     _put_file("outreach_queue.csv", buf.getvalue(), sha, commit_message)
+
+
+def get_cv():
+    """Returns (pdf_bytes, sha) for the current CV, or (None, None) if none exists yet."""
+    return _get_file_bytes(CV_PATH)
+
+
+def save_cv(pdf_bytes, commit_message):
+    _, sha = _get_file_bytes(CV_PATH)
+    _put_file_bytes(CV_PATH, pdf_bytes, sha, commit_message)
 
 
 def update_company(slug, changes, commit_message):
