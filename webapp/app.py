@@ -12,6 +12,23 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import state_repo
 import db
 
+
+def _load_dotenv(path=".env"):
+    """Zero-dependency local-dev loader, mirroring config.py at the repo root.
+    Never overrides a real env var, so Vercel's injected values always win."""
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_dotenv()
+
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
 

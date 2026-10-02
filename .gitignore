@@ -29,6 +29,7 @@
 !webapp/*.py
 !webapp/*.txt
 !webapp/*.json
+!webapp/.env.example
 !webapp/templates/
 !webapp/templates/*.html
 !webapp/api/
