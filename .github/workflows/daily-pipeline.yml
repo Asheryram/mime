@@ -14,6 +14,11 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
+      # Your private companion repo (owner/name) holding outreach_queue.csv,
+      # outreach_log.csv, and your CV - set this as a repo Variable (Settings ->
+      # Secrets and variables -> Actions -> Variables) if you forked this repo;
+      # the fallback only matches the original author's own repo.
+      STATE_REPO: ${{ vars.STATE_REPO || 'Asheryram/mime-state' }}
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
@@ -48,10 +53,11 @@ jobs:
 
       - name: Pull current state (queue, log, CV)
         run: |
-          git clone state-repo:Asheryram/mime-state.git state-repo
+          git clone state-repo:${STATE_REPO}.git state-repo
           cp state-repo/outreach_queue.csv .
           cp state-repo/outreach_log.csv . || true
-          cp state-repo/YramAsherTettehAbotsi_resume.pdf .
+          cv_path="$(python3 -c 'import applicant; print(applicant.CV_PATH)')"
+          cp "state-repo/$cv_path" "$cv_path"
 
       - name: Search for new candidate companies
         run: |

@@ -2,6 +2,8 @@
 
 An end-to-end automated cold job application and follow-up engine for running high-volume, personalized outreach campaigns. It combines semantic web search, contact harvesting, dynamic PDF cover letter generation, and threaded email follow-ups to turn cold job hunting into a repeatable pipeline.
 
+Nothing about the pipeline is specific to software or DevOps roles: the search queries, the pitch, and the letter content are all data, not code. A nursing graduate, an accountant, or a mechanical engineer can run the exact same pipeline for their own field. See [Replicating this for your own field](#-replicating-this-for-your-own-field) below.
+
 All personal details live in a single file (`applicant.py`), so **any human user or AI coding agent** can clone the repository, edit one file, add a CV, and run their own campaign.
 
 ---
@@ -24,6 +26,50 @@ Three phases, each runnable independently:
 
 ---
 
+## 🎓 Replicating This for Your Own Field
+
+Everything devops-specific in this repo lives in two files. Replace both and the rest of the pipeline (search, scraping, sending, follow-ups, CI, dashboard) works unchanged for any field.
+
+### 1. `applicant.py`: your identity and pitch
+
+Edit the top-level fields (name, headline, location, LinkedIn/GitHub, CV filename) and the `TRACKS` dictionary. Each track is one pitch for one kind of role:
+
+```python
+TRACKS = {
+    "nursing": {
+        "role_title": "Registered Nurse",
+        "subject_area": "Nursing",
+        "interest_area": "clinical nursing",
+        "closing_skills": "patient care experience, clinical judgment, and adaptability",
+        "credentials": "a nursing graduate of <your school> with <N> years of clinical rotation experience",
+        "highlights": [
+            "Four bullets here, each a real, specific, checkable claim your CV backs up.",
+            "...",
+            "...",
+            "...",
+        ],
+    },
+}
+DEFAULT_TRACK = "nursing"
+```
+
+You can rename the keys (`devops`/`software`/`sysadmin`) to whatever fields you're applying across, add as many as you want, or keep just one. **Every highlight must be something your CV can back up.** The cover letter and CV are read side by side, and an unbacked claim is worse than no claim.
+
+### 2. `cover_letter_generator.py`: the cover letter body text
+
+This is the one place with field-specific prose, and the one place you'll actually edit code rather than data:
+
+*   **If you're adding a track beyond the existing three:** write a new method styled like `get_software_paragraphs()` or `get_sysadmin_paragraphs()` (one intro paragraph, a lead-in line, 2 to 3 bullet highlights, a closing paragraph), then add one `elif (track or "").strip().lower() == "your_track_name":` branch in `generate_pdf()` right next to the existing two, calling your new method.
+*   **If you're reusing the `devops` track's slot** (the one with company-type-specific variants: fintech, consultancy, bank, isp, startup), rewrite the bullet content inside `get_template_paragraphs()` for each `company_type` branch. The structure (one intro, one transition line, three bullets, one closing) is a reasonable template for any field; only the sentences themselves are devops-specific.
+
+Either way, every paragraph is plain HTML-ish markup ReportLab parses (`<b>`, `&bull;`, `&#160;` for non-breaking spaces). Copy the formatting, replace the words.
+
+### 3. Everything else is unaffected
+
+`outreach_pipeline.py`'s search queries (`search "fintech startups in Lagos" 10`) are plain strings you choose at the command line or in `.github/workflows/daily-pipeline.yml`. Search for whatever companies or employers are relevant to your field instead. `company_type` categories (`fintech`, `consultancy`, `bank`, `isp`, `general_startup`) are also just labels; relabel them for your own sectors if the defaults don't fit, updating the branches in `get_template_paragraphs()` to match.
+
+---
+
 ## 📂 Repository Structure
 
 | File | Purpose |
@@ -38,15 +84,24 @@ Three phases, each runnable independently:
 | **`config.py`** | Zero-dependency `.env` loader. |
 | **`outreach_queue.csv`** | Central tracking file for target companies and their status. |
 | **`outreach_log.csv`** | Append-only history of send attempts and outcomes. |
+| **`.github/workflows/daily-pipeline.yml`** | Unattended daily run of the whole campaign (see [Scheduled CI](#-scheduled-ci-fully-unattended) below). |
+| **`webapp/`** | Optional hosted dashboard for the manual-review parts (see [Triage Dashboard](#-triage-dashboard-optional-web-app) below). |
 
 ### Queue status lifecycle
 
 ```
-Pending ──(you approve)──> Approved ──(send)──> Sent ──(6 days)──> Followup-Sent
-   └──(no email found)──> Skipped        └──(SMTP error)──> Failed
+Pending ──(you approve, or the dashboard/CI auto-approve)──> Approved ──(send)──> Sent ──(6 days)──> Followup-Sent
+   │                                                                                  └──(SMTP error)──> Failed
+   ├──(no email found)──> Skipped
+   └──(unusable scraped name)──> Review ──(you fix the name)──> back to Pending
 ```
 
-`Pending → Approved` is **manual and deliberate**. Nothing is ever emailed until you flip that column yourself.
+A row can also be marked `Rejected` from the dashboard, which drops it for good. Three extra columns track manual review state without changing `status`:
+
+*   **`lead_reviewed`**: set to `yes` once a human (or you, via `send`'s companion `auto-approve` command) has looked at a scraped lead. `auto-approve` only promotes `Pending` rows that are also `lead_reviewed=yes`, so a brand-new scraped lead never gets emailed sight-unseen.
+*   **`replied`** / **`bounced`**: set to `yes` to stop future follow-ups (`replied`) or future sends (`bounced`) to that row, without editing the hardcoded exclusion lists in `followup_pipeline.py`.
+
+`Pending → Approved` is **manual and deliberate** by default. Nothing is ever emailed until you flip that column yourself, unless you've opted into the fully unattended CI pipeline below.
 
 ---
 
@@ -72,8 +127,8 @@ Fill in `.env`:
 
 Phone and contact email live in `.env` rather than `applicant.py` specifically so that `applicant.py` can be committed to a public repository without publishing a personal number and inbox for scrapers to harvest.
 
-### 3. Personalise `applicant.py`
-Set your name, headline, location, LinkedIn/GitHub, target role, and the four achievement bullets used in the cold email. Then edit the five sector variants in `cover_letter_generator.py` (`get_template_paragraphs`) so each letter cites your own work.
+### 3. Personalise `applicant.py` and `cover_letter_generator.py`
+Set your name, headline, location, LinkedIn/GitHub, target role(s), and CV filename. The default `TRACKS` are written for a DevOps/Cloud Engineering job search; see [Replicating This for Your Own Field](#-replicating-this-for-your-own-field) above for exactly what to edit if you're applying in a different field.
 
 ### 4. Add your CV
 Save your master resume as a PDF in the root directory and point `CV_PATH` in `applicant.py` at it. `send` aborts up front if the file is missing.
@@ -92,7 +147,7 @@ Delete the `Example Tech` row before your first real run.
 | :--- | :--- | :--- |
 | **Search** | `py outreach_pipeline.py search "[query]" [limit]` | Find new target companies, e.g. `search "fintech startups in Lagos" 10`. |
 | **Scrape** | `py outreach_pipeline.py scrape` | Resolves missing websites and crawls up to 5 domains per run for contact emails. |
-| **Auto-approve** | `py outreach_pipeline.py auto-approve` | Promotes every `Pending` row with a scraped email straight to `Approved`, skipping manual review. For the scheduled CI pipeline below; not recommended for interactive use. |
+| **Auto-approve** | `py outreach_pipeline.py auto-approve` | Promotes every `Pending` row with a scraped email **and `lead_reviewed=yes`** to `Approved`. For the scheduled CI pipeline below, paired with the dashboard's review step; not recommended for interactive use. |
 | **Generate** | `py outreach_pipeline.py generate` | Compiles cover letter PDFs into `generated_letters/` for review. |
 | **Send** | `py outreach_pipeline.py send` | Emails up to 15 companies marked `Approved` and marks them `Sent`. |
 | **Status** | `py outreach_pipeline.py status` | Queue counts by status. |
@@ -122,15 +177,36 @@ Two exclusion lists at the top of `followup_pipeline.py` are worth maintaining a
 
 ## ⏰ Scheduled CI (fully unattended)
 
-`.github/workflows/daily-pipeline.yml` runs the entire campaign once a day with no human in the loop: search, scrape, `auto-approve`, generate, send, and follow-up, in that order. This deliberately removes the manual approval gate described above, so every row with a scraped email gets emailed automatically.
+`.github/workflows/daily-pipeline.yml` runs the whole campaign once a day with no human required to kick it off: search, scrape, `auto-approve`, generate, send, and follow-up, in that order. The one deliberate exception is new leads: `auto-approve` only promotes a row once `lead_reviewed=yes`, and nothing in this workflow sets that flag, so a freshly scraped company sits in `Pending` until it's reviewed. That review step is what the [Triage Dashboard](#-triage-dashboard-optional-web-app) below is for. Run without the dashboard and new leads simply queue up unsent until you flip `lead_reviewed` by hand in the CSV.
 
-Because this repo is public, the queue, log, and CV cannot live here (see `.gitignore`). They're mirrored instead in a private companion repo, `Asheryram/mime-state`, which the workflow pulls at the start of each run and pushes back to at the end via an SSH deploy key.
+Because this repo is public, the queue, log, and CV cannot live here (see `.gitignore`). They're mirrored instead in a private companion repo (the author's own is `Asheryram/mime-state`), which the workflow pulls at the start of each run and pushes back to at the end via an SSH deploy key.
 
-Required repo secrets (Settings &rarr; Secrets and variables &rarr; Actions):
-*   `STATE_DEPLOY_KEY`: private half of a deploy key with write access on `mime-state` (already configured).
-*   `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `EXA_API_KEY`, `APIFY_API_TOKEN`, `APPLICANT_PHONE`, `APPLICANT_EMAIL`: same values as `.env`.
+**If you forked this repo**, you need your own companion repo (see [Setting up your own companion repo](#setting-up-your-own-companion-repo) below) and these repo settings (Settings &rarr; Secrets and variables &rarr; Actions):
+
+| Name | Kind | Value |
+| :--- | :--- | :--- |
+| `STATE_REPO` | Variable | `your-github-username/your-state-repo` |
+| `STATE_DEPLOY_KEY` | Secret | Private half of an SSH deploy key with write access on your companion repo |
+| `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `EXA_API_KEY`, `APIFY_API_TOKEN`, `APPLICANT_PHONE`, `APPLICANT_EMAIL` | Secrets | Same values as `.env` |
 
 Trigger a run manually from the Actions tab (`workflow_dispatch`) to test before waiting for the daily schedule.
+
+### Setting up your own companion repo
+
+1. Create a new **private** GitHub repo (any name).
+2. Seed it with a header-only `outreach_queue.csv` (copy the header row from `outreach_queue.example.csv`), an empty `outreach_log.csv`, and your CV PDF under the same filename as `CV_PATH` in `applicant.py`.
+3. Generate an SSH key pair (`ssh-keygen -t ed25519 -f state_deploy_key -N ""`), add the public half as a **Deploy key with write access** on that repo (Settings &rarr; Deploy keys), and add the private half as the `STATE_DEPLOY_KEY` secret on *this* repo.
+4. Set the `STATE_REPO` repo variable to `your-username/your-repo-name`.
+
+---
+
+## 🖥️ Triage Dashboard (optional web app)
+
+`webapp/` is a small hosted Flask app for the parts of the pipeline that genuinely need a human: fixing a scraped company name, supplying an email the scraper missed, reviewing a freshly scraped lead before it's approved, flagging a sent application as replied or bounced, and swapping in a new CV. It's a thin client over the same companion repo the scheduled CI uses, not a second source of truth: the dashboard and the CI both read and write the exact same `outreach_queue.csv`.
+
+Pages: an **Overview** home with stat tiles and quick links, then one page each for **New leads**, **Name fixes**, **Missing emails**, **Sent (replies/bounces)**, **All companies**, and **Your CV**. Login is restricted to a single email you set, with first-run password setup and an email-based reset flow (via your existing Gmail credentials, no new email service needed).
+
+It's entirely optional: everything it does can also be done by editing `outreach_queue.csv` directly in your companion repo, and the CI pipeline runs fine without it (new leads just wait in `Pending` for review). Full setup (a Turso database, a GitHub token, and deploying to Vercel) is documented in **[`webapp/README.md`](webapp/README.md)**.
 
 ---
 
@@ -142,13 +218,15 @@ This repository works well under an autonomous coding agent (Claude Code, Cursor
 *   **Verify & approve:** *"Open outreach_queue.csv, sanity-check the scraped emails, remove duplicates, and mark the strong targets as Approved."*
 *   **Execute sends:** *"Generate the cover letters, confirm the CV path resolves, then run the daily send batch."*
 *   **Run check-ins:** *"Dry-run the follow-up pipeline, show me who is eligible, then send if it looks right."*
+*   **Set up automation:** *"Wire this repo up to run daily via GitHub Actions, with a hosted dashboard so I can review new leads from my phone."*
 
 ---
 
 ## ⚠️ Safeguards & Rate Limits
-*   **Manual approval gate:** only rows you set to `Approved` are ever emailed.
-*   **Spam controls:** a random 30&ndash;60 second delay between every send.
+*   **Manual approval gate:** only rows you set to `Approved` (or review and approve via the dashboard) are ever emailed.
+*   **New-lead review gate:** `auto-approve` requires `lead_reviewed=yes`, so even the fully unattended CI never emails a company nobody has looked at.
+*   **Spam controls:** a random 30 to 60 second delay between every send.
 *   **Daily caps:** 15 cold emails/day (`DAILY_SEND_LIMIT`), 10 follow-ups/day (`FOLLOWUP_DAILY_LIMIT`).
 *   **Review queue:** inspect every draft in `generated_letters/` before sending.
 *   **Crash safety:** the queue is written back to disk after each individual send, so an interruption never re-sends an email.
-*   **Secrets:** `.gitignore` denies everything by default and whitelists only source files &mdash; your `.env`, CV, queue, and generated letters are never committed. Don't loosen it.
+*   **Secrets:** `.gitignore` denies everything by default and whitelists only source files; your `.env`, CV, queue, and generated letters are never committed. Don't loosen it. The dashboard's own secrets (Turso, GitHub token, Flask session key) live only in Vercel's environment variables, never in the repo.

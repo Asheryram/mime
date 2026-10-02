@@ -11,7 +11,7 @@ import io
 import base64
 import requests
 
-REPO = "Asheryram/mime-state"
+REPO = os.environ.get("STATE_REPO", "Asheryram/mime-state")
 API_ROOT = f"https://api.github.com/repos/{REPO}/contents"
 BRANCH = "main"
 CV_PATH = "YramAsherTettehAbotsi_resume.pdf"
