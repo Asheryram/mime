@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Sent — Outreach Triage Desk{% endblock %}
+{% block body %}
+<div class="wrap">
+  <header class="topbar">
+    <div>
+      <h1>Sent — check for replies</h1>
+      <div class="tagline">Flag a reply to stop follow-ups, or a bounce to stop future sends.</div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+  </header>
+
+  {% include "_nav.html" %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  <section class="panel card-box">
+    {% if sent_for_triage %}
+    <div class="rows">
+      {% for c in sent_for_triage %}
+      <div class="row-item">
+        <div style="display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center;">
+          <div class="field grow"><label>{{ c.company_name }}</label><div class="meta">{{ c.email }}</div></div>
+          <div class="field"><label>Sent</label><div class="meta">{{ c.date_sent.split(' ')[0] if c.date_sent else '—' }}</div></div>
+          <div class="actions">
+            <form method="post" action="{{ url_for('action_mark_replied', slug=c.slug) }}"><input type="hidden" name="next" value="leads_sent"><button type="submit" class="good">Replied</button></form>
+            <form method="post" action="{{ url_for('action_mark_bounced', slug=c.slug) }}"><input type="hidden" name="next" value="leads_sent"><button type="submit" class="bad">Bounced</button></form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">Nothing waiting here.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

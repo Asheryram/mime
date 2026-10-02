@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}New Leads — Outreach Triage Desk{% endblock %}
+{% block body %}
+<div class="wrap">
+  <header class="topbar">
+    <div>
+      <h1>New leads to review</h1>
+      <div class="tagline">Scraped with an email found. Approving lets tomorrow's run send to them.</div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+  </header>
+
+  {% include "_nav.html" %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  <section class="panel card-box">
+    {% if new_leads %}
+    <div class="rows">
+      {% for c in new_leads %}
+      <div class="row-item">
+        <form method="post" action="{{ url_for('action_approve', slug=c.slug) }}">
+          <input type="hidden" name="next" value="leads_new">
+          <div class="field grow"><label>Company name</label><input type="text" name="company_name" value="{{ c.company_name }}"></div>
+          <div class="field"><label>Type</label>
+            <select name="company_type">{% for t in company_types %}<option value="{{ t }}" {% if t==c.company_type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+          </div>
+          <div class="field"><label>Track</label>
+            <select name="track">{% for t in tracks %}<option value="{{ t }}" {% if t==c.track %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+          </div>
+          <div class="field"><label>Email found</label><div class="meta">{{ c.email }}</div></div>
+          <div class="actions"><button type="submit">Approve</button></div>
+        </form>
+        <div class="secondary-row">
+          <form method="post" action="{{ url_for('action_reject', slug=c.slug) }}">
+            <input type="hidden" name="next" value="leads_new">
+            <button type="submit" class="ghost">Reject</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">Nothing waiting here.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

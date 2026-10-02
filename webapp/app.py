@@ -97,7 +97,7 @@ def login():
         pw = request.form.get("password", "")
         if email == ALLOWED_EMAIL and check_password_hash(auth["password_hash"], pw):
             session["authed"] = True
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("overview"))
         flash("Incorrect email or password.", "error")
     return render_template("login.html", email=ALLOWED_EMAIL)
 
@@ -169,9 +169,9 @@ def bucket(companies):
     return new_leads, name_fixes, missing_email, sent_for_triage
 
 
-@app.route("/")
-@login_required
-def dashboard():
+def load_dashboard_data():
+    """Shared by every logged-in page so the nav tabs always show live counts,
+    even on a page that only renders one section in full."""
     companies = state_repo.load_queue()
     for c in companies:
         c["slug"] = state_repo.slugify(c["company_name"])
@@ -179,18 +179,68 @@ def dashboard():
     counts = {}
     for c in companies:
         counts[c["status"]] = counts.get(c["status"], 0) + 1
+    return {
+        "companies": sorted(companies, key=lambda c: c["company_name"].lower()),
+        "new_leads": new_leads,
+        "name_fixes": name_fixes,
+        "missing_email": missing_email,
+        "sent_for_triage": sent_for_triage,
+        "counts": counts,
+        "total": len(companies),
+    }
+
+
+# Where an action redirects back to, picked from the form's hidden "next"
+# field. Whitelisted so a crafted field name can't send a redirect anywhere
+# other than one of this app's own pages.
+NEXT_PAGES = {
+    "overview", "leads_new", "leads_name_fix", "leads_missing_email",
+    "leads_sent", "companies_all", "cv",
+}
+
+
+def redirect_next(default):
+    nxt = request.form.get("next", "")
+    return redirect(url_for(nxt if nxt in NEXT_PAGES else default))
+
+
+@app.route("/")
+@login_required
+def overview():
+    return render_template("overview.html", active="overview", **load_dashboard_data())
+
+
+@app.route("/leads/new")
+@login_required
+def leads_new():
     return render_template(
-        "dashboard.html",
-        companies=sorted(companies, key=lambda c: c["company_name"].lower()),
-        new_leads=new_leads,
-        name_fixes=name_fixes,
-        missing_email=missing_email,
-        sent_for_triage=sent_for_triage,
-        counts=counts,
-        total=len(companies),
-        company_types=COMPANY_TYPES,
-        tracks=TRACKS,
+        "leads_new.html", active="leads_new",
+        company_types=COMPANY_TYPES, tracks=TRACKS, **load_dashboard_data(),
     )
+
+
+@app.route("/leads/name-fix")
+@login_required
+def leads_name_fix():
+    return render_template("leads_name_fix.html", active="leads_name_fix", **load_dashboard_data())
+
+
+@app.route("/leads/missing-email")
+@login_required
+def leads_missing_email():
+    return render_template("leads_missing_email.html", active="leads_missing_email", **load_dashboard_data())
+
+
+@app.route("/leads/sent")
+@login_required
+def leads_sent():
+    return render_template("leads_sent.html", active="leads_sent", **load_dashboard_data())
+
+
+@app.route("/companies")
+@login_required
+def companies_all():
+    return render_template("companies_all.html", active="companies_all", **load_dashboard_data())
 
 
 @app.route("/cv", methods=["GET", "POST"])
@@ -214,7 +264,9 @@ def cv():
 
     data, _ = state_repo.get_cv()
     size_kb = round(len(data) / 1024, 1) if data else None
-    return render_template("cv.html", size_kb=size_kb, has_cv=data is not None)
+    return render_template(
+        "cv.html", active="cv", size_kb=size_kb, has_cv=data is not None, **load_dashboard_data(),
+    )
 
 
 @app.route("/cv/download")
@@ -240,7 +292,7 @@ def action_approve(slug):
         "lead_reviewed": "yes",
     }, f"Approve lead {slug}")
     flash("Lead approved.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect_next("leads_new")
 
 
 @app.route("/action/<slug>/reject", methods=["POST"])
@@ -248,7 +300,7 @@ def action_approve(slug):
 def action_reject(slug):
     state_repo.update_company(slug, {"status": "Rejected"}, f"Reject lead {slug}")
     flash("Lead dropped.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect_next("leads_new")
 
 
 @app.route("/action/<slug>/fix-name", methods=["POST"])
@@ -257,12 +309,12 @@ def action_fix_name(slug):
     name = request.form.get("company_name", "").strip()
     if not name:
         flash("Name can't be empty.", "error")
-        return redirect(url_for("dashboard"))
+        return redirect_next("leads_name_fix")
     state_repo.update_company(slug, {
         "company_name": name, "status": "Pending", "lead_reviewed": "yes",
     }, f"Fix company name for {slug}")
     flash("Name saved and approved.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect_next("leads_name_fix")
 
 
 @app.route("/action/<slug>/save-email", methods=["POST"])
@@ -271,12 +323,12 @@ def action_save_email(slug):
     email = request.form.get("email", "").strip()
     if "@" not in email:
         flash("Enter a valid email.", "error")
-        return redirect(url_for("dashboard"))
+        return redirect_next("leads_missing_email")
     state_repo.update_company(slug, {
         "email": email, "status": "Pending", "lead_reviewed": "yes",
     }, f"Add manual email for {slug}")
     flash("Email saved and approved.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect_next("leads_missing_email")
 
 
 @app.route("/action/<slug>/mark-replied", methods=["POST"])
@@ -284,7 +336,7 @@ def action_save_email(slug):
 def action_mark_replied(slug):
     state_repo.update_company(slug, {"replied": "yes"}, f"Mark {slug} replied")
     flash("Marked as replied.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect_next("leads_sent")
 
 
 @app.route("/action/<slug>/mark-bounced", methods=["POST"])
@@ -292,7 +344,7 @@ def action_mark_replied(slug):
 def action_mark_bounced(slug):
     state_repo.update_company(slug, {"bounced": "yes"}, f"Mark {slug} bounced")
     flash("Marked as bounced.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect_next("leads_sent")
 
 
 if __name__ == "__main__":

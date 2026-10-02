@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Overview — Outreach Triage Desk{% endblock %}
+{% block body %}
+<div class="wrap">
+  <header class="topbar">
+    <div>
+      <h1>Outreach Triage Desk</h1>
+      <div class="tagline">Manual review for the mime job-outreach pipeline</div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+  </header>
+
+  {% include "_nav.html" %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  <div class="stat-grid">
+    <a href="{{ url_for('companies_all') }}" class="stat-tile card-box linkable"><div class="stat-num">{{ total }}</div><div class="stat-label">Total</div></a>
+    {% for status, n in counts.items() %}
+      {% set href = {'Pending': 'leads_new', 'Review': 'leads_name_fix', 'Skipped': 'leads_missing_email', 'Sent': 'leads_sent', 'Followup-Sent': 'leads_sent'}.get(status) %}
+      {% if href %}
+        <a href="{{ url_for(href) }}" class="stat-tile card-box linkable"><div class="stat-num">{{ n }}</div><div class="stat-label">{{ status }}</div></a>
+      {% else %}
+        <div class="stat-tile card-box"><div class="stat-num">{{ n }}</div><div class="stat-label">{{ status }}</div></div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="panel-grid">
+    <a href="{{ url_for('leads_new') }}" class="panel card-box" style="text-decoration:none;">
+      <div class="panel-head"><h2>New leads to review</h2><span class="count-badge">{{ new_leads|length }}</span></div>
+      <p class="hint">Scraped with an email found. Approving lets tomorrow's run send to them.</p>
+      <span class="open-link">Open &rarr;</span>
+    </a>
+    <a href="{{ url_for('leads_name_fix') }}" class="panel card-box" style="text-decoration:none;">
+      <div class="panel-head"><h2>Needs a company name fix</h2><span class="count-badge">{{ name_fixes|length }}</span></div>
+      <p class="hint">The scraper couldn't read a clean name from the page title.</p>
+      <span class="open-link">Open &rarr;</span>
+    </a>
+    <a href="{{ url_for('leads_missing_email') }}" class="panel card-box" style="text-decoration:none;">
+      <div class="panel-head"><h2>Missing an email</h2><span class="count-badge">{{ missing_email|length }}</span></div>
+      <p class="hint">No contact address was found on the site.</p>
+      <span class="open-link">Open &rarr;</span>
+    </a>
+    <a href="{{ url_for('leads_sent') }}" class="panel card-box" style="text-decoration:none;">
+      <div class="panel-head"><h2>Sent — check for replies</h2><span class="count-badge">{{ sent_for_triage|length }}</span></div>
+      <p class="hint">Flag a reply to stop follow-ups, or a bounce to stop future sends.</p>
+      <span class="open-link">Open &rarr;</span>
+    </a>
+  </div>
+</div>
+{% endblock %}

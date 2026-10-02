@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}All Companies — Outreach Triage Desk{% endblock %}
+{% block body %}
+<div class="wrap">
+  <header class="topbar">
+    <div>
+      <h1>All companies</h1>
+      <div class="tagline">{{ total }} tracked in the queue</div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+  </header>
+
+  {% include "_nav.html" %}
+
+  <section class="panel card-box">
+    <div class="alltable-wrap">
+      <table class="alltable">
+        <thead><tr><th>Company</th><th>Status</th><th>Type</th><th>Email</th><th>Sent</th><th>Flag</th></tr></thead>
+        <tbody>
+          {% for c in companies %}
+          <tr>
+            <td>{{ c.company_name }}</td>
+            <td><span class="pill {{ c.status }}">{{ c.status }}</span></td>
+            <td>{{ c.company_type }}</td>
+            <td>{{ c.email }}</td>
+            <td>{{ c.date_sent.split(' ')[0] if c.date_sent else '' }}</td>
+            <td>{{ 'replied' if c.replied == 'yes' else ('bounced' if c.bounced == 'yes' else '') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

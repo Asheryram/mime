@@ -1,0 +1,9 @@
+<nav class="tabs">
+  <a href="{{ url_for('overview') }}" class="tab {{ 'active' if active == 'overview' }}">Overview</a>
+  <a href="{{ url_for('leads_new') }}" class="tab {{ 'active' if active == 'leads_new' }}">New leads <span class="tab-count">{{ new_leads|length }}</span></a>
+  <a href="{{ url_for('leads_name_fix') }}" class="tab {{ 'active' if active == 'leads_name_fix' }}">Name fixes <span class="tab-count">{{ name_fixes|length }}</span></a>
+  <a href="{{ url_for('leads_missing_email') }}" class="tab {{ 'active' if active == 'leads_missing_email' }}">Missing email <span class="tab-count">{{ missing_email|length }}</span></a>
+  <a href="{{ url_for('leads_sent') }}" class="tab {{ 'active' if active == 'leads_sent' }}">Sent <span class="tab-count">{{ sent_for_triage|length }}</span></a>
+  <a href="{{ url_for('companies_all') }}" class="tab {{ 'active' if active == 'companies_all' }}">All companies <span class="tab-count">{{ total }}</span></a>
+  <a href="{{ url_for('cv') }}" class="tab {{ 'active' if active == 'cv' }}">Your CV</a>
+</nav>

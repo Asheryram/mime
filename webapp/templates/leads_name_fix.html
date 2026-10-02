@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Name Fixes — Outreach Triage Desk{% endblock %}
+{% block body %}
+<div class="wrap">
+  <header class="topbar">
+    <div>
+      <h1>Needs a company name fix</h1>
+      <div class="tagline">The scraper couldn't read a clean name from the page title.</div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
+  </header>
+
+  {% include "_nav.html" %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  <section class="panel card-box">
+    {% if name_fixes %}
+    <div class="rows">
+      {% for c in name_fixes %}
+      <div class="row-item">
+        <form method="post" action="{{ url_for('action_fix_name', slug=c.slug) }}">
+          <input type="hidden" name="next" value="leads_name_fix">
+          <div class="field grow"><label>Corrected name</label><input type="text" name="company_name" value="{{ c.company_name }}"></div>
+          <div class="field"><label>Scraped from</label><div class="meta"><a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.website }}</a></div></div>
+          <div class="actions"><button type="submit">Save &amp; approve</button></div>
+        </form>
+        <div class="secondary-row">
+          <form method="post" action="{{ url_for('action_reject', slug=c.slug) }}">
+            <input type="hidden" name="next" value="leads_name_fix">
+            <button type="submit" class="ghost">Drop</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">Nothing waiting here.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}
