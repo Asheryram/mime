@@ -66,7 +66,7 @@ Either way, every paragraph is plain HTML-ish markup ReportLab parses (`<b>`, `&
 
 ### 3. Everything else is unaffected
 
-`outreach_pipeline.py`'s search queries (`search "fintech startups in Lagos" 10`) are plain strings you choose at the command line or in `.github/workflows/daily-pipeline.yml`. Search for whatever companies or employers are relevant to your field instead. `company_type` categories (`fintech`, `consultancy`, `bank`, `isp`, `general_startup`) are also just labels; relabel them for your own sectors if the defaults don't fit, updating the branches in `get_template_paragraphs()` to match.
+`outreach_pipeline.py`'s search queries (`search "fintech startups in Lagos" 10`) are plain strings you choose at the command line or in `.github/workflows/scrape-pipeline.yml`. Search for whatever companies or employers are relevant to your field instead. `company_type` categories (`fintech`, `consultancy`, `bank`, `isp`, `general_startup`) are also just labels; relabel them for your own sectors if the defaults don't fit, updating the branches in `get_template_paragraphs()` to match.
 
 ---
 
@@ -84,7 +84,8 @@ Either way, every paragraph is plain HTML-ish markup ReportLab parses (`<b>`, `&
 | **`config.py`** | Zero-dependency `.env` loader. |
 | **`outreach_queue.csv`** | Central tracking file for target companies and their status. |
 | **`outreach_log.csv`** | Append-only history of send attempts and outcomes. |
-| **`.github/workflows/daily-pipeline.yml`** | Unattended daily run of the whole campaign (see [Scheduled CI](#-scheduled-ci-fully-unattended) below). |
+| **`.github/workflows/scrape-pipeline.yml`** | Unattended lead discovery every 6 hours: search + scrape (see [Scheduled CI](#-scheduled-ci-fully-unattended) below). |
+| **`.github/workflows/send-pipeline.yml`** | Unattended sending once a day: auto-approve + generate + send + follow-up (see [Scheduled CI](#-scheduled-ci-fully-unattended) below). |
 | **`webapp/`** | Optional hosted dashboard for the manual-review parts (see [Triage Dashboard](#-triage-dashboard-optional-web-app) below). |
 
 ### Queue status lifecycle
@@ -177,19 +178,25 @@ Two exclusion lists at the top of `followup_pipeline.py` are worth maintaining a
 
 ## ⏰ Scheduled CI (fully unattended)
 
-`.github/workflows/daily-pipeline.yml` runs the whole campaign once a day with no human required to kick it off: search, scrape, `auto-approve`, generate, send, and follow-up, in that order. The one deliberate exception is new leads: `auto-approve` only promotes a row once `lead_reviewed=yes`, and nothing in this workflow sets that flag, so a freshly scraped company sits in `Pending` until it's reviewed. That review step is what the [Triage Dashboard](#-triage-dashboard-optional-web-app) below is for. Run without the dashboard and new leads simply queue up unsent until you flip `lead_reviewed` by hand in the CSV.
+Two workflows run on independent schedules instead of one combined run, so discovery doesn't wait on the send cadence and vice versa:
 
-Because this repo is public, the queue, log, and CV cannot live here (see `.gitignore`). They're mirrored instead in a private companion repo (the author's own is `Asheryram/mime-state`), which the workflow pulls at the start of each run and pushes back to at the end via an SSH deploy key.
+*   **`.github/workflows/scrape-pipeline.yml`**, every 6 hours (00:00, 06:00, 12:00, 18:00 UTC): `search` against the queries written into the workflow, then `scrape` to resolve contact emails for whatever's missing one.
+*   **`.github/workflows/send-pipeline.yml`**, once a day at 09:00 UTC (9am in Accra, GMT with no DST): `auto-approve`, `generate`, `send`, then `followup_pipeline.py run`.
+
+The one deliberate gap between them: `auto-approve` only promotes a row once `lead_reviewed=yes`, and neither workflow sets that flag on its own, so a freshly scraped company sits in `Pending` until it's reviewed. That review step is what the [Triage Dashboard](#-triage-dashboard-optional-web-app) below is for. Run without the dashboard and new leads simply queue up unsent until you flip `lead_reviewed` by hand in the CSV.
+
+Because this repo is public, the queue, log, and CV cannot live here (see `.gitignore`). They're mirrored instead in a private companion repo (the author's own is `Asheryram/mime-state`), which both workflows pull at the start of their run and push back to at the end via the same SSH deploy key.
 
 **If you forked this repo**, you need your own companion repo (see [Setting up your own companion repo](#setting-up-your-own-companion-repo) below) and these repo settings (Settings &rarr; Secrets and variables &rarr; Actions):
 
-| Name | Kind | Value |
-| :--- | :--- | :--- |
-| `STATE_REPO` | Variable | `your-github-username/your-state-repo` |
-| `STATE_DEPLOY_KEY` | Secret | Private half of an SSH deploy key with write access on your companion repo |
-| `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `EXA_API_KEY`, `APIFY_API_TOKEN`, `APPLICANT_PHONE`, `APPLICANT_EMAIL` | Secrets | Same values as `.env` |
+| Name | Kind | Used by | Value |
+| :--- | :--- | :--- | :--- |
+| `STATE_REPO` | Variable | both | `your-github-username/your-state-repo` |
+| `STATE_DEPLOY_KEY` | Secret | both | Private half of an SSH deploy key with write access on your companion repo |
+| `EXA_API_KEY`, `APIFY_API_TOKEN` | Secrets | scrape-pipeline | Same values as `.env` |
+| `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `APPLICANT_PHONE`, `APPLICANT_EMAIL` | Secrets | send-pipeline | Same values as `.env` |
 
-Trigger a run manually from the Actions tab (`workflow_dispatch`) to test before waiting for the daily schedule.
+Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to test before waiting for its schedule. Want a different cadence? Both are plain cron (`cron: "0 */6 * * *"` and `cron: "0 9 * * *"`) in each workflow's `on.schedule`.
 
 ### Setting up your own companion repo
 

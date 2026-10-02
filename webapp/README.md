@@ -23,8 +23,8 @@ Entirely optional. Everything it does can be done by hand-editing the CSV in you
                                               │ key)            │
                                    ┌──────────────────────┐    │
                                    │ .github/workflows/     │    │
-                                   │ daily-pipeline.yml     │────┘
-                                   │ (scheduled, unattended)│
+                                   │ scrape- & send-        │────┘
+                                   │ pipeline.yml (scheduled)│
                                    └──────────────────────┘
 ```
 

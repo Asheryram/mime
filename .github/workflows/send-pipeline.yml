@@ -1,13 +1,13 @@
-name: Daily outreach pipeline
+name: Daily send pipeline
 
 on:
   schedule:
-    # 07:00 UTC = 07:00 in Accra (GMT, no DST)
-    - cron: "0 7 * * *"
+    # 09:00 UTC = 9am in Accra (GMT, no DST)
+    - cron: "0 9 * * *"
   workflow_dispatch: {}
 
 concurrency:
-  group: daily-outreach-pipeline
+  group: send-pipeline
   cancel-in-progress: false
 
 jobs:
@@ -15,14 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Your private companion repo (owner/name) holding outreach_queue.csv,
-      # outreach_log.csv, and your CV - set this as a repo Variable (Settings ->
-      # Secrets and variables -> Actions -> Variables) if you forked this repo;
-      # the fallback only matches the original author's own repo.
+      # outreach_log.csv, and your CV - set this as a repo Variable (Settings
+      # -> Secrets and variables -> Actions -> Variables) if you forked this
+      # repo; the fallback only matches the original author's own repo.
       STATE_REPO: ${{ vars.STATE_REPO || 'Asheryram/mime-state' }}
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-      EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
-      APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
       APPLICANT_PHONE: ${{ secrets.APPLICANT_PHONE }}
       APPLICANT_EMAIL: ${{ secrets.APPLICANT_EMAIL }}
     steps:
@@ -59,15 +57,7 @@ jobs:
           cv_path="$(python3 -c 'import applicant; print(applicant.CV_PATH)')"
           cp "state-repo/$cv_path" "$cv_path"
 
-      - name: Search for new candidate companies
-        run: |
-          python3 outreach_pipeline.py search "cloud and devops engineering companies Accra Ghana" 10
-          python3 outreach_pipeline.py search "fintech and payments companies hiring engineers Ghana" 10
-
-      - name: Scrape contact emails
-        run: python3 outreach_pipeline.py scrape
-
-      - name: Auto-approve scraped rows (no human in the loop by design)
+      - name: Auto-approve reviewed leads
         run: python3 outreach_pipeline.py auto-approve
 
       - name: Generate cover letters
@@ -88,5 +78,5 @@ jobs:
           git config user.name "mime-ci"
           git config user.email "actions@users.noreply.github.com"
           git add outreach_queue.csv outreach_log.csv
-          git diff --cached --quiet || git commit -m "Daily pipeline run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git diff --cached --quiet || git commit -m "Daily send run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push

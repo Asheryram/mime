@@ -19,10 +19,10 @@
 !outreach_pipeline.py
 !followup_pipeline.py
 
-# Whitelist the scheduled CI workflow (contains no secrets, only references them)
+# Whitelist the scheduled CI workflows (contain no secrets, only references them)
 !.github/
 !.github/workflows/
-!.github/workflows/daily-pipeline.yml
+!.github/workflows/*.yml
 
 # Whitelist the triage dashboard webapp (secrets live in Vercel env vars, not here)
 !webapp/

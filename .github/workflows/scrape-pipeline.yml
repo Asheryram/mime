@@ -1,0 +1,74 @@
+name: Scrape new leads
+
+on:
+  schedule:
+    # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: scrape-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      # Your private companion repo (owner/name) holding outreach_queue.csv
+      # and outreach_log.csv - set this as a repo Variable (Settings ->
+      # Secrets and variables -> Actions -> Variables) if you forked this
+      # repo; the fallback only matches the original author's own repo.
+      STATE_REPO: ${{ vars.STATE_REPO || 'Asheryram/mime-state' }}
+      EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+      APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
+    steps:
+      - name: Check out pipeline code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up deploy key for the private state repo
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STATE_DEPLOY_KEY }}" > ~/.ssh/state_deploy_key
+          chmod 600 ~/.ssh/state_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host state-repo
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/state_deploy_key
+            IdentitiesOnly yes
+          EOF
+
+      - name: Pull current state (queue, log)
+        run: |
+          git clone state-repo:${STATE_REPO}.git state-repo
+          cp state-repo/outreach_queue.csv .
+          cp state-repo/outreach_log.csv . || true
+
+      - name: Search for new candidate companies
+        run: |
+          python3 outreach_pipeline.py search "cloud and devops engineering companies Accra Ghana" 10
+          python3 outreach_pipeline.py search "fintech and payments companies hiring engineers Ghana" 10
+
+      - name: Scrape contact emails
+        run: python3 outreach_pipeline.py scrape
+
+      - name: Push updated state back to the private repo
+        if: always()
+        run: |
+          cp outreach_queue.csv state-repo/outreach_queue.csv
+          cp outreach_log.csv state-repo/outreach_log.csv || true
+          cd state-repo
+          git config user.name "mime-ci"
+          git config user.email "actions@users.noreply.github.com"
+          git add outreach_queue.csv outreach_log.csv
+          git diff --cached --quiet || git commit -m "Scrape run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
