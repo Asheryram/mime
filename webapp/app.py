@@ -1,7 +1,7 @@
 import os
 import smtplib
 import ssl
-from datetime import datetime
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from functools import wraps
 
@@ -79,7 +79,7 @@ def setup():
         elif pw != pw2:
             flash("Passwords don't match.", "error")
         else:
-            db.save_auth(generate_password_hash(pw), datetime.utcnow())
+            db.save_auth(generate_password_hash(pw), datetime.now(timezone.utc))
             flash("Password set. Log in below.", "success")
             return redirect(url_for("login"))
     return render_template("setup.html", email=ALLOWED_EMAIL)
@@ -147,7 +147,7 @@ def reset_password(token):
         elif pw != pw2:
             flash("Passwords don't match.", "error")
         else:
-            db.save_auth(generate_password_hash(pw), datetime.utcnow())
+            db.save_auth(generate_password_hash(pw), datetime.now(timezone.utc))
             flash("Password updated. Log in below.", "success")
             return redirect(url_for("login"))
     return render_template("reset.html")
