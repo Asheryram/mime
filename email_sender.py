@@ -1,6 +1,7 @@
 import smtplib
 import ssl
 import os
+import time
 from email.message import EmailMessage
 from email.utils import make_msgid, formatdate
 from config import config
@@ -66,13 +67,19 @@ class EmailSender:
 
         # Send email
         context = ssl.create_default_context()
-        try:
-            print(f"[EmailSender] Connecting to SMTP server to email {recipient_email}...")
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-                smtp.login(self.sender_email, self.password)
-                smtp.sendmail(self.sender_email, recipient_email, msg.as_string())
-            print(f"[EmailSender] Successfully sent email to {recipient_email}")
-            return message_id
-        except Exception as e:
-            print(f"[EmailSender] SMTP Error sending to {recipient_email}: {e}")
-            return None
+        last_error = None
+        for attempt in range(2):  # one retry: a dropped connection is often transient
+            try:
+                print(f"[EmailSender] Connecting to SMTP server to email {recipient_email}...")
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
+                    smtp.login(self.sender_email, self.password)
+                    smtp.sendmail(self.sender_email, recipient_email, msg.as_string())
+                print(f"[EmailSender] Successfully sent email to {recipient_email}")
+                return message_id
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    print(f"[EmailSender] SMTP Error sending to {recipient_email}: {e}. Retrying in 15s...")
+                    time.sleep(15)
+        print(f"[EmailSender] SMTP Error sending to {recipient_email} (gave up after retry): {last_error}")
+        return None

@@ -111,15 +111,21 @@ def send_followup_email(sender_email, password, r, dry_run=False):
         return True
 
     context = ssl.create_default_context()
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-            smtp.login(sender_email, password)
-            smtp.sendmail(sender_email, recipient_email, msg.as_string())
-        print(f"Successfully sent follow-up to {recipient_email}")
-        return True
-    except Exception as e:
-        print(f"SMTP Error sending follow-up to {recipient_email}: {e}")
-        return False
+    last_error = None
+    for attempt in range(2):  # one retry: a dropped connection is often transient
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
+                smtp.login(sender_email, password)
+                smtp.sendmail(sender_email, recipient_email, msg.as_string())
+            print(f"Successfully sent follow-up to {recipient_email}")
+            return True
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                print(f"SMTP Error sending follow-up to {recipient_email}: {e}. Retrying in 15s...")
+                time.sleep(15)
+    print(f"SMTP Error sending follow-up to {recipient_email} (gave up after retry): {last_error}")
+    return False
 
 
 def run_followups(limit=FOLLOWUP_DAILY_LIMIT, dry_run=False):
@@ -157,11 +163,13 @@ def run_followups(limit=FOLLOWUP_DAILY_LIMIT, dry_run=False):
             save_queue(queue)
             sent_count += 1
 
-            # Space out sends to stay under Gmail's spam heuristics.
-            if idx < len(to_send) - 1:
-                delay = random.randint(30, 60)
-                print(f"Waiting {delay} seconds...")
-                time.sleep(delay)
+        # Space out every attempt, not just successful ones - back-to-back
+        # retries after a failure are exactly what trips Gmail's abuse
+        # heuristics further.
+        if not dry_run and idx < len(to_send) - 1:
+            delay = random.randint(30, 60)
+            print(f"Waiting {delay} seconds...")
+            time.sleep(delay)
 
     if dry_run:
         print(f"Dry run complete. {len(to_send)} follow-ups would be sent. Run 'py followup_pipeline.py run' to send.")
