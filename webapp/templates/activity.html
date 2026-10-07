@@ -1,0 +1,43 @@
+{% extends "base_app.html" %}
+{% block title %}Activity · Outreach Triage Desk{% endblock %}
+{% block page_title %}Activity{% endblock %}
+{% block page_sub %}What the pipeline sent, and every change made to the queue by the pipeline or by you.{% endblock %}
+{% block content %}
+<div class="split" style="align-items: start;">
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Emails sent</h2><span class="count-badge">{{ log|length }}</span></div>
+    {% if log %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>When</th><th>Company</th><th>Result</th></tr></thead>
+        <tbody>
+          {% for e in log %}
+          <tr>
+            <td class="nowrap muted">{{ e.date }}</td>
+            <td>{{ e.company_name }}<div class="mono muted">{{ e.email }}</div></td>
+            <td><span class="pill {{ 'ok' if e.status == 'SUCCESS' else 'fail' }}">{{ 'sent' if e.status == 'SUCCESS' else 'failed' }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">No emails sent yet.</div>
+    {% endif %}
+    <p class="muted small" style="margin: 12px 0 0;">First emails only. Follow-up dates are on <a href="{{ url_for('sent', show='all') }}">Awaiting reply</a>.</p>
+  </section>
+
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Change history</h2></div>
+    {% if commits %}
+    <ul class="feed">
+      {% for a in commits %}
+      <li><span>{{ a.message|commit_label }}</span><span class="when">{{ a.date|ago }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty">No history to show yet.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

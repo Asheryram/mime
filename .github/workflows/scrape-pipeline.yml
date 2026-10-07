@@ -6,18 +6,20 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch: {}
 
+# Shared with send-pipeline.yml so the two never run at once (e.g. a "Run now"
+# from the dashboard landing on top of a scheduled run) and fight over the queue.
 concurrency:
-  group: scrape-pipeline
+  group: outreach-state
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      # Your private companion repo (owner/name) holding outreach_queue.csv
-      # and outreach_log.csv - set this as a repo Variable (Settings ->
-      # Secrets and variables -> Actions -> Variables) if you forked this
-      # repo; the fallback only matches the original author's own repo.
+      # Your private companion repo (owner/name) holding outreach_queue.csv,
+      # outreach_log.csv and search_queries.txt - set this as a repo Variable
+      # (Settings -> Secrets and variables -> Actions -> Variables) if you
+      # forked this repo; the fallback only matches the original author's.
       STATE_REPO: ${{ vars.STATE_REPO || 'Asheryram/mime-state' }}
       EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
       APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
@@ -50,16 +52,15 @@ jobs:
             IdentitiesOnly yes
           EOF
 
-      - name: Pull current state (queue, log)
+      - name: Pull current state (queue, log, searches)
         run: |
           git clone state-repo:${STATE_REPO}.git state-repo
           cp state-repo/outreach_queue.csv .
           cp state-repo/outreach_log.csv . || true
+          cp state-repo/search_queries.txt . || true
 
       - name: Search for new candidate companies
-        run: |
-          python3 outreach_pipeline.py search "cloud and devops engineering companies Accra Ghana" 10
-          python3 outreach_pipeline.py search "fintech and payments companies hiring engineers Ghana" 10
+        run: python3 outreach_pipeline.py search-all
 
       - name: Scrape contact emails
         run: python3 outreach_pipeline.py scrape
@@ -76,5 +77,12 @@ jobs:
           git config user.name "mime-ci"
           git config user.email "actions@users.noreply.github.com"
           git add outreach_queue.csv outreach_log.csv
-          git diff --cached --quiet || git commit -m "Scrape run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -m "Scrape run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # The dashboard may have edited the queue while this ran. Rebase onto
+          # it (row-level edits merge cleanly) instead of failing the push.
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main || { git rebase --abort; echo "Conflicting edit to the same row; see the queue history."; exit 1; }
+          done
+          exit 1

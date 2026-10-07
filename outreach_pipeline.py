@@ -32,6 +32,14 @@ QUEUE_FIELDS = [
 
 DAILY_SEND_LIMIT = 15
 
+# search_queries.txt (edited from the dashboard's Settings page, stored in the
+# companion repo) drives the scheduled scrape. These are used until it exists.
+SEARCH_QUERIES_FILE = "search_queries.txt"
+DEFAULT_SEARCH_QUERIES = [
+    ("cloud and devops engineering companies Accra Ghana", 10),
+    ("fintech and payments companies hiring engineers Ghana", 10),
+]
+
 # Initialize services
 exa = None
 apify = None
@@ -263,6 +271,38 @@ def clean_company_name(title):
         name = name.title()
 
     return name
+
+
+def load_search_queries(path=SEARCH_QUERIES_FILE):
+    """
+    One search per line, optionally "query | limit" (1-25, default 10); blank
+    lines and "#" comments ignored. Falls back to DEFAULT_SEARCH_QUERIES when
+    the file is missing or has no usable lines, so a scrape never silently
+    searches for nothing.
+    """
+    if not os.path.exists(path):
+        return DEFAULT_SEARCH_QUERIES
+    queries = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            query, _, limit = line.partition("|")
+            query = query.strip()
+            if not query:
+                continue
+            try:
+                n = int(limit.strip()) if limit.strip() else 10
+            except ValueError:
+                n = 10
+            queries.append((query, max(1, min(n, 25))))
+    return queries or DEFAULT_SEARCH_QUERIES
+
+
+def run_search_all(track=None):
+    for query, limit in load_search_queries():
+        run_exa_search(query, limit, track=track)
 
 
 def run_exa_search(query_str, limit=15, track=None):
@@ -697,6 +737,7 @@ Usage: py outreach_pipeline.py [command]
 Commands:
   search    - Search Exa for new tech companies (args: query [limit])
               e.g., py outreach_pipeline.py search "fintech companies in Accra Ghana" 10
+  search-all - Run every search in search_queries.txt (falls back to built-in defaults)
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
   auto-approve   - Promote every Pending row with a usable email to Approved (no human review;
               for the scheduled CI pipeline only, not recommended for interactive use)
@@ -742,6 +783,8 @@ if __name__ == "__main__":
         if len(argv) > 3:
             lim = int(argv[3])
         run_exa_search(q, lim, track=track)
+    elif cmd == "search-all":
+        run_search_all()
     elif cmd == "scrape":
         run_apify_scrape()
     elif cmd == "auto-approve":

@@ -1,0 +1,30 @@
+{% extends "base_app.html" %}
+{% block title %}Add company · Outreach Triage Desk{% endblock %}
+{% block page_title %}Add a company{% endblock %}
+{% block page_sub %}For leads you found yourself. With an email it goes out at the next send; with just a website, the next scrape finds the email.{% endblock %}
+{% block content %}
+<section class="panel card-box" style="max-width: 760px;">
+  <form method="post">
+    <div class="form-grid">
+      <div class="full"><label for="company_name">Company name</label>
+        <input id="company_name" type="text" name="company_name" value="{{ form.get('company_name', '') }}" required autofocus></div>
+      <div><label for="website">Website</label>
+        <input id="website" type="text" name="website" value="{{ form.get('website', '') }}" placeholder="company.com"></div>
+      <div><label for="email">Email (if you have one)</label>
+        <input id="email" type="text" name="email" value="{{ form.get('email', '') }}" placeholder="careers@company.com"></div>
+      <div><label for="company_type">Type (picks the cover letter variant)</label>
+        <select id="company_type" name="company_type">{% for t in company_types %}<option value="{{ t }}" {{ 'selected' if t == form.get('company_type', 'general_startup') }}>{{ t }}</option>{% endfor %}</select></div>
+      <div><label for="track">Track (picks the pitch)</label>
+        <select id="track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == form.get('track', tracks[0]) }}>{{ t }}</option>{% endfor %}</select></div>
+      <div><label for="recipient_name">Addressed to</label>
+        <input id="recipient_name" type="text" name="recipient_name" value="{{ form.get('recipient_name', '') }}" placeholder="The Recruiting and Technology Team"></div>
+      <div><label for="company_address">Address on the letter</label>
+        <input id="company_address" type="text" name="company_address" value="{{ form.get('company_address', '') }}" placeholder="Accra, Ghana"></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit">Add to queue</button>
+      <a href="{{ url_for('companies_list') }}" class="btn ghost">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

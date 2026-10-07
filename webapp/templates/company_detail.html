@@ -1,0 +1,90 @@
+{% extends "base_app.html" %}
+{% block title %}{{ c.company_name }} · Outreach Triage Desk{% endblock %}
+{% block page_title %}{{ c.company_name }}{% endblock %}
+{% block page_sub %}<span class="pill {{ c.status }}">{{ c.status }}</span>
+  {% if c.bucket == "upcoming" %} Goes out at the next send.
+  {% elif c.bucket == "scraping" %} Waiting for the next scrape to find an email.
+  {% elif c.bucket == "attention" %} Needs you: {{ {"name": "the company name is unclear", "email": "no email was found", "failed": "the last send failed"}[reason] }}.
+  {% elif c.bucket == "sent" %} Sent {{ c.date_sent|day }}{% if c.date_followup %}, followed up {{ c.date_followup|day }}{% endif %}.
+  {% elif c.status == "Rejected" %} Won't be emailed.
+  {% endif %}
+{% endblock %}
+{% block content %}
+<p class="small" style="margin: -8px 0 18px;"><a href="{{ url_for('companies_list') }}">&larr; All companies</a></p>
+
+<div class="split" style="align-items: start;">
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Details</h2></div>
+    <form method="post">
+      <div class="form-grid">
+        <div class="full"><label for="company_name">Company name</label>
+          <input id="company_name" type="text" name="company_name" value="{{ c.company_name }}" required></div>
+        <div><label for="email">Email</label>
+          <input id="email" type="text" name="email" value="{{ c.email }}" placeholder="careers@company.com"></div>
+        <div><label for="website">Website</label>
+          <input id="website" type="text" name="website" value="{{ c.website }}" placeholder="https://company.com"></div>
+        <div><label for="company_type">Type (picks the cover letter variant)</label>
+          <select id="company_type" name="company_type">{% for t in company_types %}<option value="{{ t }}" {{ 'selected' if t == c.company_type }}>{{ t }}</option>{% endfor %}</select></div>
+        <div><label for="track">Track (picks the pitch)</label>
+          <select id="track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == c.track }}>{{ t }}</option>{% endfor %}</select></div>
+        <div><label for="recipient_name">Addressed to</label>
+          <input id="recipient_name" type="text" name="recipient_name" value="{{ c.recipient_name }}"></div>
+        <div><label for="company_address">Address on the letter</label>
+          <input id="company_address" type="text" name="company_address" value="{{ c.company_address }}"></div>
+        <div><label for="status">Status</label>
+          <select id="status" name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == c.status }}>{{ s }}</option>{% endfor %}</select></div>
+        <div style="padding-top: 22px;">
+          <label class="check"><input type="checkbox" name="replied" {{ 'checked' if c.replied == 'yes' }}> They replied</label>
+          <label class="check"><input type="checkbox" name="bounced" {{ 'checked' if c.bounced == 'yes' }}> Email bounced</label>
+        </div>
+      </div>
+      <div class="callout info">Approved or Pending with an email goes out at the next send. Rejected is never emailed. Sent and Followup-Sent are set by the pipeline; change them only to correct a mistake.</div>
+      <div class="form-actions"><button type="submit">Save changes</button></div>
+    </form>
+  </section>
+
+  <div>
+    <section class="panel card-box">
+      <div class="panel-head"><h2>Quick actions</h2></div>
+      <div class="row-actions">
+        {% if c.website %}<a class="btn ghost sm" href="{{ c.website }}" target="_blank" rel="noopener">Open website &nearr;</a>{% endif %}
+        {% if c.status == "Failed" %}
+          <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="status" value="Approved"><input type="hidden" name="next" value="{{ url_for('company_detail', slug=c.slug) }}">
+            <button type="submit" class="sm">Retry at next send</button>
+          </form>
+        {% endif %}
+        {% if c.status == "Rejected" %}
+          <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="status" value="Pending"><input type="hidden" name="next" value="{{ url_for('company_detail', slug=c.slug) }}">
+            <button type="submit" class="sm">Put back in the queue</button>
+          </form>
+        {% elif c.bucket in ("upcoming", "scraping", "attention") %}
+          <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="status" value="Rejected"><input type="hidden" name="next" value="{{ url_for('company_detail', slug=c.slug) }}">
+            <button type="submit" class="ghost sm">Don't email this one</button>
+          </form>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel card-box">
+      <div class="panel-head"><h2>History</h2></div>
+      <dl class="kv">
+        <dt>Added</dt><dd>{{ c.date_added or "unknown" }}</dd>
+        <dt>Sent</dt><dd>{{ c.date_sent or "not yet" }}</dd>
+        <dt>Follow-up</dt><dd>{{ c.date_followup or "not yet" }}</dd>
+        <dt>Message-ID</dt><dd>{{ c.message_id or "none" }}</dd>
+      </dl>
+    </section>
+
+    <section class="panel card-box">
+      <div class="panel-head"><h2>Delete</h2></div>
+      <p class="hint">Removes the company from the queue entirely. If the scraper finds it again it'll come back as new; use "Don't email this one" instead to keep it out for good.</p>
+      <form method="post" action="{{ url_for('company_delete', slug=c.slug) }}" onsubmit='return confirm({{ ("Delete " ~ c.company_name ~ " from the queue?")|tojson }});'>
+        <button type="submit" class="danger sm">Delete company</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

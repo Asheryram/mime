@@ -1,0 +1,55 @@
+{% extends "base_app.html" %}
+{% from "_macros.html" import run_status %}
+{% block title %}Settings · Outreach Triage Desk{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_sub %}Run the pipeline on demand, change what it searches for, and swap your CV.{% endblock %}
+{% block content %}
+<section class="panel card-box" id="pipeline">
+  <div class="panel-head"><h2>Run the pipeline now</h2></div>
+  <p class="hint">Both run on a schedule anyway. Use these when you don't want to wait: after changing the searches, or after fixing a batch of leads you want out today.</p>
+  <div class="pipe">
+    <div class="pipe-row">
+      <div><div class="pipe-name">Scrape</div><div class="pipe-sched">Searches for new companies and finds their emails. Every 6 hours; next {{ next_scrape|when }} UTC.</div></div>
+      <form method="post" action="{{ url_for('settings_run', which='scrape') }}" class="inline">
+        <button type="submit" class="sm">Run scrape now</button>
+      </form>
+      <div class="pipe-last">Last run: {{ run_status(scrape_run, pipeline_repo) }} &middot; <a href="{{ scrape_url }}" target="_blank" rel="noopener">all runs</a></div>
+    </div>
+    <div class="pipe-row">
+      <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails everything in Up next (15 max) and due follow-ups. Daily at 09:00; next {{ next_send|when }} UTC.</div></div>
+      <form method="post" action="{{ url_for('settings_run', which='send') }}" class="inline"
+            onsubmit="return confirm('This emails real companies right now. Send everything in Up next?');">
+        <button type="submit" class="sm">Send now</button>
+      </form>
+      <div class="pipe-last">Last run: {{ run_status(send_run, pipeline_repo) }} &middot; <a href="{{ send_url }}" target="_blank" rel="noopener">all runs</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel card-box" id="queries">
+  <div class="panel-head"><h2>What the scraper searches for</h2>{% if not queries_saved %}<span class="count-badge">defaults</span>{% endif %}</div>
+  <p class="hint">One search per line, written the way you'd describe the companies you want (industry, location, what they do). Add <span class="mono">| 15</span> to change how many results a search returns (1 to 25, default 10). Each scrape runs every line. Lines starting with <span class="mono">#</span> are ignored.</p>
+  <form method="post" action="{{ url_for('settings_queries') }}">
+    <textarea id="queries" name="queries" rows="8" spellcheck="false" aria-label="Search queries">{{ queries_text }}</textarea>
+    <div class="form-actions"><button type="submit">Save searches</button></div>
+  </form>
+</section>
+
+<section class="panel card-box" id="cv">
+  <div class="panel-head"><h2>Your CV</h2></div>
+  <p class="hint">Attached to every application and follow-up. A new upload is used from the next send on.</p>
+  <div class="row-actions" style="margin-bottom: 16px; align-items: center;">
+    {% if has_cv %}
+      <span class="muted">Current file: <span class="mono">{{ cv_size_kb }} KB</span></span>
+      <a href="{{ url_for('cv_download') }}" target="_blank" rel="noopener" class="btn ghost sm">View current CV</a>
+    {% else %}
+      <span class="muted">No CV on file yet. Nothing can be sent until you upload one.</span>
+    {% endif %}
+  </div>
+  <form method="post" action="{{ url_for('settings_cv') }}" enctype="multipart/form-data">
+    <label for="cv-file">Replace with a new PDF</label>
+    <input type="file" id="cv-file" name="cv" accept="application/pdf" required style="margin-bottom: 14px; color: var(--muted);">
+    <div class="form-actions"><button type="submit">Upload</button></div>
+  </form>
+</section>
+{% endblock %}

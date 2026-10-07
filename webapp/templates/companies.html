@@ -1,0 +1,47 @@
+{% extends "base_app.html" %}
+{% from "_macros.html" import company_link %}
+{% block title %}Companies · Outreach Triage Desk{% endblock %}
+{% block page_title %}Companies{% endblock %}
+{% block page_sub %}Every company the pipeline knows about. Open one to edit any detail, change its status, or delete it.{% endblock %}
+{% block content %}
+<form method="get" action="{{ url_for('companies_list') }}" class="searchbar" role="search">
+  {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  <input type="search" name="q" value="{{ q }}" placeholder="Search name, email or website" aria-label="Search companies">
+  <button type="submit">Search</button>
+  {% if q %}<a class="btn ghost" href="{{ url_for('companies_list', status=status or None) }}">Clear</a>{% endif %}
+</form>
+
+<div class="chips">
+  <a class="chip {{ 'active' if not status }}" href="{{ url_for('companies_list', q=q or None) }}">All<span class="n">{{ nav.total }}</span></a>
+  {% for s, n in status_counts %}
+    <a class="chip {{ 'active' if status == s }}" href="{{ url_for('companies_list', status=s, q=q or None) }}">{{ s }}<span class="n">{{ n }}</span></a>
+  {% endfor %}
+</div>
+
+<section class="panel card-box">
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Company</th><th>Status</th><th>Email</th><th>Website</th><th>Type</th><th>Sent</th></tr></thead>
+      <tbody>
+        {% for c in rows %}
+        <tr>
+          <td>{{ company_link(c) }}
+            {% if c.replied == "yes" %} <span class="pill replied">replied</span>{% elif c.bounced == "yes" %} <span class="pill bounced">bounced</span>{% endif %}
+          </td>
+          <td><span class="pill {{ c.status }}">{{ c.status }}</span></td>
+          <td class="mono">{{ c.email if c.email != "no_email_found" else "" }}</td>
+          <td class="nowrap">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.host }} &nearr;</a>{% endif %}</td>
+          <td class="muted">{{ c.company_type }}</td>
+          <td class="muted nowrap">{{ c.date_sent|day }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small" style="margin: 12px 0 0;">{{ rows|length }} shown</p>
+  {% else %}
+  <div class="empty">No companies match{% if q %} "{{ q }}"{% endif %}{% if status %} with status {{ status }}{% endif %}.</div>
+  {% endif %}
+</section>
+{% endblock %}

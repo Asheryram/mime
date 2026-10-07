@@ -6,8 +6,10 @@ on:
     - cron: "0 9 * * *"
   workflow_dispatch: {}
 
+# Shared with scrape-pipeline.yml so the two never run at once (e.g. a "Run now"
+# from the dashboard landing on top of a scheduled run) and fight over the queue.
 concurrency:
-  group: send-pipeline
+  group: outreach-state
   cancel-in-progress: false
 
 jobs:
@@ -57,7 +59,7 @@ jobs:
           cv_path="$(python3 -c 'import applicant; print(applicant.CV_PATH)')"
           cp "state-repo/$cv_path" "$cv_path"
 
-      - name: Auto-approve reviewed leads
+      - name: Auto-approve clean leads
         run: python3 outreach_pipeline.py auto-approve
 
       - name: Generate cover letters
@@ -78,5 +80,14 @@ jobs:
           git config user.name "mime-ci"
           git config user.email "actions@users.noreply.github.com"
           git add outreach_queue.csv outreach_log.csv
-          git diff --cached --quiet || git commit -m "Daily send run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -m "Daily send run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # This run can take ~15 minutes (spaced-out sends), and the dashboard
+          # may have edited the queue meanwhile. Losing this push would lose the
+          # "Sent" marks and re-send tomorrow, so rebase onto those edits
+          # (row-level changes merge cleanly) instead of failing.
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main || { git rebase --abort; echo "Conflicting edit to the same row; see the queue history."; exit 1; }
+          done
+          exit 1

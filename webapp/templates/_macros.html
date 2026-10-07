@@ -1,0 +1,17 @@
+{% macro run_status(run, repo) -%}
+  {%- if run is none -%}
+    <span class="muted">No runs yet</span>
+  {%- elif run.error -%}
+    <span class="muted">Run history hidden: give GITHUB_TOKEN <em>Actions: Read</em> on {{ repo }}</span>
+  {%- elif run.status in ("queued", "in_progress", "waiting", "pending", "requested") -%}
+    <span class="pill running">Running</span> started {{ run.created_at|ago }} &middot; <a href="{{ run.html_url }}" target="_blank" rel="noopener">view</a>
+  {%- elif run.conclusion == "success" -%}
+    <span class="pill ok">Succeeded</span> {{ run.created_at|ago }} &middot; <a href="{{ run.html_url }}" target="_blank" rel="noopener">view</a>
+  {%- else -%}
+    <span class="pill fail">{{ (run.conclusion or "failed")|capitalize }}</span> {{ run.created_at|ago }} &middot; <a href="{{ run.html_url }}" target="_blank" rel="noopener">see why</a>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro company_link(c) -%}
+  <a href="{{ url_for('company_detail', slug=c.slug) }}" class="rowlink">{{ c.company_name }}</a>
+{%- endmacro %}

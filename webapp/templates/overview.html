@@ -1,54 +1,73 @@
-{% extends "base.html" %}
-{% block title %}Overview — Outreach Triage Desk{% endblock %}
-{% block body %}
-<div class="wrap">
-  <header class="topbar">
-    <div>
-      <h1>Outreach Triage Desk</h1>
-      <div class="tagline">Manual review for the mime job-outreach pipeline</div>
+{% extends "base_app.html" %}
+{% from "_macros.html" import run_status %}
+{% block title %}Overview · Outreach Triage Desk{% endblock %}
+{% block page_title %}Outreach Triage Desk{% endblock %}
+{% block page_sub %}What needs you, what goes out next, and who still owes you a reply.{% endblock %}
+{% block content %}
+<div class="action-grid">
+  <a class="action-card card-box {{ 'warn' if nav.attention }}" href="{{ url_for('attention') }}">
+    <span class="action-label">Needs you</span>
+    <span class="action-num">{{ nav.attention }}</span>
+    <span class="action-hint">
+      {% if nav.attention %}Unclear names, missing emails or failed sends. Nothing goes out for these until you fix them.
+      {% else %}Nothing to fix. Every lead the scraper found is either clean or already handled.{% endif %}
+    </span>
+  </a>
+  <a class="action-card card-box" href="{{ url_for('upcoming') }}">
+    <span class="action-label">Going out next</span>
+    <span class="action-num">{{ upcoming_count }}</span>
+    <span class="action-hint">
+      {% if upcoming_count %}{{ batch }} sent {{ next_send|when }} UTC{% if rollover %}; {{ rollover }} wait for the day after (15 a day max){% endif %}.
+      {% else %}Nothing queued. The next scrape is {{ next_scrape|when }} UTC.{% endif %}
+    </span>
+  </a>
+  <a class="action-card card-box" href="{{ url_for('sent') }}">
+    <span class="action-label">Awaiting a reply</span>
+    <span class="action-num">{{ nav.sent_open }}</span>
+    <span class="action-hint">Mark a reply or bounce so follow-ups stop chasing them.</span>
+  </a>
+</div>
+
+<div class="split">
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Pipeline</h2><span class="spacer"></span><a href="{{ url_for('settings') }}" class="small">Run now &rarr;</a></div>
+    <div class="pipe">
+      <div class="pipe-row">
+        <div><div class="pipe-name">Scrape</div><div class="pipe-sched">Finds new companies and their emails, every 6 hours</div></div>
+        <div class="pipe-next">next {{ next_scrape|when }}</div>
+        <div class="pipe-last">Last run: {{ run_status(scrape_run, "the pipeline repo") }}</div>
+      </div>
+      <div class="pipe-row">
+        <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails everything up next, plus follow-ups, daily at 09:00</div></div>
+        <div class="pipe-next">next {{ next_send|when }}</div>
+        <div class="pipe-last">Last run: {{ run_status(send_run, "the pipeline repo") }}</div>
+      </div>
     </div>
-    <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
-  </header>
+    <p class="muted small" style="margin: 12px 0 0;">Times are UTC, which is Accra time. GitHub can start scheduled runs up to ~15 minutes late.</p>
+  </section>
 
-  {% include "_nav.html" %}
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Recent activity</h2><span class="spacer"></span><a href="{{ url_for('activity') }}" class="small">All activity &rarr;</a></div>
+    {% if activity %}
+    <ul class="feed">
+      {% for a in activity %}
+      <li><span>{{ a.message|commit_label }}</span><span class="when">{{ a.date|ago }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty">No history to show yet.</div>
+    {% endif %}
+  </section>
+</div>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}
-  {% endwith %}
-
-  <div class="stat-grid">
-    <a href="{{ url_for('companies_all') }}" class="stat-tile card-box linkable"><div class="stat-num">{{ total }}</div><div class="stat-label">Total</div></a>
-    {% for status, n in counts.items() %}
-      {% set href = {'Pending': 'leads_new', 'Review': 'leads_name_fix', 'Skipped': 'leads_missing_email', 'Sent': 'leads_sent', 'Followup-Sent': 'leads_sent'}.get(status) %}
-      {% if href %}
-        <a href="{{ url_for(href) }}" class="stat-tile card-box linkable"><div class="stat-num">{{ n }}</div><div class="stat-label">{{ status }}</div></a>
-      {% else %}
-        <div class="stat-tile card-box"><div class="stat-num">{{ n }}</div><div class="stat-label">{{ status }}</div></div>
-      {% endif %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>Queue by status</h2><span class="spacer"></span><a href="{{ url_for('companies_list') }}" class="small">All companies &rarr;</a></div>
+  <div class="chips" style="margin: 0;">
+    {% for s, n in status_counts %}
+      <a class="chip" href="{{ url_for('companies_list', status=s) }}">{{ s }}<span class="n">{{ n }}</span></a>
+    {% else %}
+      <span class="muted">The queue is empty. Add a company, or wait for the next scrape.</span>
     {% endfor %}
   </div>
-
-  <div class="panel-grid">
-    <a href="{{ url_for('leads_new') }}" class="panel card-box" style="text-decoration:none;">
-      <div class="panel-head"><h2>New leads to review</h2><span class="count-badge">{{ new_leads|length }}</span></div>
-      <p class="hint">Scraped with an email found. Approving lets tomorrow's run send to them.</p>
-      <span class="open-link">Open &rarr;</span>
-    </a>
-    <a href="{{ url_for('leads_name_fix') }}" class="panel card-box" style="text-decoration:none;">
-      <div class="panel-head"><h2>Needs a company name fix</h2><span class="count-badge">{{ name_fixes|length }}</span></div>
-      <p class="hint">The scraper couldn't read a clean name from the page title.</p>
-      <span class="open-link">Open &rarr;</span>
-    </a>
-    <a href="{{ url_for('leads_missing_email') }}" class="panel card-box" style="text-decoration:none;">
-      <div class="panel-head"><h2>Missing an email</h2><span class="count-badge">{{ missing_email|length }}</span></div>
-      <p class="hint">No contact address was found on the site.</p>
-      <span class="open-link">Open &rarr;</span>
-    </a>
-    <a href="{{ url_for('leads_sent') }}" class="panel card-box" style="text-decoration:none;">
-      <div class="panel-head"><h2>Sent — check for replies</h2><span class="count-badge">{{ sent_for_triage|length }}</span></div>
-      <p class="hint">Flag a reply to stop follow-ups, or a bounce to stop future sends.</p>
-      <span class="open-link">Open &rarr;</span>
-    </a>
-  </div>
-</div>
+</section>
 {% endblock %}

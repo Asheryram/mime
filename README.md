@@ -66,7 +66,7 @@ Either way, every paragraph is plain HTML-ish markup ReportLab parses (`<b>`, `&
 
 ### 3. Everything else is unaffected
 
-`outreach_pipeline.py`'s search queries (`search "fintech startups in Lagos" 10`) are plain strings you choose at the command line or in `.github/workflows/scrape-pipeline.yml`. Search for whatever companies or employers are relevant to your field instead. `company_type` categories (`fintech`, `consultancy`, `bank`, `isp`, `general_startup`) are also just labels; relabel them for your own sectors if the defaults don't fit, updating the branches in `get_template_paragraphs()` to match.
+Search queries are plain sentences describing the companies you want. The scheduled scrape reads them from `search_queries.txt` in your companion repo (edit them on the dashboard's Settings page, or by hand: one per line, optional `| N` for the result count); one-off searches run from the command line (`search "fintech startups in Lagos" 10`). Search for whatever companies or employers are relevant to your field instead. `company_type` categories (`fintech`, `consultancy`, `bank`, `isp`, `general_startup`) are also just labels; relabel them for your own sectors if the defaults don't fit, updating the branches in `get_template_paragraphs()` to match.
 
 ---
 
@@ -150,6 +150,7 @@ Delete the `Example Tech` row before your first real run.
 | **Scrape** | `py outreach_pipeline.py scrape` | Resolves missing websites and crawls up to 5 domains per run for contact emails. |
 | **Auto-approve** | `py outreach_pipeline.py auto-approve` | Promotes every `Pending` row with a usable, scraped email to `Approved`, no review required. For the scheduled CI pipeline below; not recommended for interactive use. |
 | **Notify-review** | `py outreach_pipeline.py notify-review` | Emails you a summary of `Review` and missing-email rows that need a human, each only once. |
+| **Search-all** | `py outreach_pipeline.py search-all` | Runs every search in `search_queries.txt` (falls back to built-in defaults if it doesn't exist). What the scheduled scrape uses. |
 | **Generate** | `py outreach_pipeline.py generate` | Compiles cover letter PDFs into `generated_letters/` for review. |
 | **Send** | `py outreach_pipeline.py send` | Emails up to 15 companies marked `Approved` and marks them `Sent`. |
 | **Status** | `py outreach_pipeline.py status` | Queue counts by status. |
@@ -213,9 +214,11 @@ Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to t
 
 `webapp/` is a small hosted Flask app for the parts of the pipeline that genuinely need a human: fixing a scraped company name, supplying an email the scraper missed, reviewing a freshly scraped lead before it's approved, flagging a sent application as replied or bounced, and swapping in a new CV. It's a thin client over the same companion repo the scheduled CI uses, not a second source of truth: the dashboard and the CI both read and write the exact same `outreach_queue.csv`.
 
-Pages: an **Overview** home with stat tiles and quick links, then one page each for **New leads**, **Name fixes**, **Missing emails**, **Sent (replies/bounces)**, **All companies**, and **Your CV**. Login is restricted to a single email you set, with first-run password setup and an email-based reset flow (via your existing Gmail credentials, no new email service needed).
+Pages: an **Overview** that says what needs you, what goes out next and who owes you a reply; **Needs you** (every stuck lead with its fix inline); **Up next** (what the next send emails); **Awaiting reply**; searchable **Companies** with an edit page for each; **Activity**; and **Settings** (run now, searches, CV). Login is restricted to a single email you set, with first-run password setup and an email-based reset flow (via your existing Gmail credentials, no new email service needed).
 
-It's entirely optional: everything it does can also be done by editing `outreach_queue.csv` directly in your companion repo, and the CI pipeline runs fine without it (new leads just wait in `Pending` for review). Full setup (a Turso database, a GitHub token, and deploying to Vercel) is documented in **[`webapp/README.md`](webapp/README.md)**.
+It also lets you add companies by hand, edit or delete any company, change the scraper's searches, and start a scrape or send immediately instead of waiting for the schedule.
+
+It's entirely optional: everything it does can also be done by editing files in your companion repo directly, and the CI pipeline runs fine without it. Full setup (a Turso database, a GitHub token, and deploying to Vercel) is documented in **[`webapp/README.md`](webapp/README.md)**.
 
 ---
 

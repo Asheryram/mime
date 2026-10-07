@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong · Outreach Triage Desk{% endblock %}
+{% block body %}
+<div class="auth-wrap" style="max-width: 560px;">
+  <h1>Something went wrong</h1>
+  <div class="card-box" style="margin-top: 20px;">
+    <p style="margin-top: 0;">{{ message }}</p>
+    {% if detail %}<p class="mono muted small" style="word-break: break-all;">{{ detail }}</p>{% endif %}
+    <div class="form-actions">
+      {% if request.method == "GET" %}<a class="btn" href="{{ request.path }}">Try again</a>{% endif %}
+      <a class="btn ghost" href="{{ url_for('overview') }}">Overview</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

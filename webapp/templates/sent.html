@@ -1,0 +1,67 @@
+{% extends "base_app.html" %}
+{% from "_macros.html" import company_link %}
+{% block title %}Awaiting reply · Outreach Triage Desk{% endblock %}
+{% block page_title %}Awaiting reply{% endblock %}
+{% block page_sub %}Everything that's been sent. One follow-up goes out automatically 6 days after the first email unless you mark a reply or a bounce here.{% endblock %}
+{% block content %}
+{% set labels = {"open": "Awaiting reply", "replied": "Replied", "bounced": "Bounced", "all": "All sent"} %}
+<div class="chips">
+  {% for key in ["open", "replied", "bounced", "all"] %}
+    <a class="chip {{ 'active' if show == key }}" href="{{ url_for('sent', show=key) }}">{{ labels[key] }}<span class="n">{{ group_counts[key] }}</span></a>
+  {% endfor %}
+</div>
+
+<section class="panel card-box">
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Company</th><th>Email</th><th>Sent</th><th>Follow-up</th><th>State</th><th></th></tr></thead>
+      <tbody>
+        {% for c in rows %}
+        {% set here = url_for('sent', show=show) %}
+        <tr>
+          <td>{{ company_link(c) }}</td>
+          <td class="mono">{{ c.email }}</td>
+          <td class="nowrap muted">{{ c.date_sent|day }}</td>
+          <td class="nowrap muted">{{ c.date_followup|day if c.date_followup else ("pending" if c.status == "Sent" else "") }}</td>
+          <td class="nowrap">
+            {% if c.replied == "yes" %}<span class="pill replied">replied</span>
+            {% elif c.bounced == "yes" %}<span class="pill bounced">bounced</span>
+            {% else %}<span class="pill later">waiting</span>{% endif %}
+          </td>
+          <td class="nowrap" style="text-align: right;">
+            {% if c.replied == "yes" or c.bounced == "yes" %}
+              <form method="post" action="{{ url_for('company_flag', slug=c.slug) }}" class="inline">
+                <input type="hidden" name="flag" value="{{ 'replied' if c.replied == 'yes' else 'bounced' }}">
+                <input type="hidden" name="value" value="">
+                <input type="hidden" name="next" value="{{ here }}">
+                <button type="submit" class="ghost sm">Undo</button>
+              </form>
+            {% else %}
+              <form method="post" action="{{ url_for('company_flag', slug=c.slug) }}" class="inline">
+                <input type="hidden" name="flag" value="replied"><input type="hidden" name="value" value="yes">
+                <input type="hidden" name="next" value="{{ here }}">
+                <button type="submit" class="good sm">They replied</button>
+              </form>
+              <form method="post" action="{{ url_for('company_flag', slug=c.slug) }}" class="inline">
+                <input type="hidden" name="flag" value="bounced"><input type="hidden" name="value" value="yes">
+                <input type="hidden" name="next" value="{{ here }}">
+                <button type="submit" class="bad sm">Bounced</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    {% if show == "open" %}No one is waiting on a reply. Sent emails show up here after each send.
+    {% elif show == "replied" %}No replies marked yet. When someone answers, mark it from "Awaiting reply" so the follow-up doesn't go out.
+    {% elif show == "bounced" %}No bounces marked.
+    {% else %}Nothing has been sent yet.{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

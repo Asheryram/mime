@@ -50,8 +50,10 @@ You'll need accounts on three services, all of which have usable free tiers:
 | `SENDER_EMAIL` | Sends password-reset emails | Same Gmail address as the main pipeline's `.env` |
 | `GMAIL_APP_PASSWORD` | Same | Same value as the main pipeline's `.env` |
 | `ALLOWED_EMAIL` | The one email allowed to log in | Your own email; defaults to the repo author's if unset |
-| `GITHUB_TOKEN` | Reads/writes the companion repo via GitHub's API | A **fine-grained PAT**: github.com/settings/personal-access-tokens/new &rarr; Repository access: only your companion repo &rarr; Permissions: Contents = Read and write |
+| `GITHUB_TOKEN` | Reads/writes the companion repo, and shows/starts pipeline runs | A **fine-grained PAT**: github.com/settings/personal-access-tokens/new &rarr; Repository access: your companion repo **and** the pipeline repo &rarr; Permissions: Contents = Read and write, Actions = Read and write. Without Actions, everything works except the run status and the Run now buttons |
 | `STATE_REPO` | Which companion repo to use | `your-github-username/your-state-repo`. Only needed if you're not the original repo author |
+| `PIPELINE_REPO` | Which repo holds the two workflows (for run status and Run now) | `your-github-username/your-fork`. Only needed if you're not the original repo author |
+| `CV_FILENAME` | Your CV's filename in the companion repo | Same as `CV_PATH` in `applicant.py`. Only needed if you're not the original repo author |
 | `TURSO_DATABASE_URL` | Your Turso database | `turso db show <name>` or the Turso dashboard |
 | `TURSO_AUTH_TOKEN` | Auth for that database | `turso db tokens create <name>` or the Turso dashboard |
 
@@ -87,15 +89,21 @@ Opens on `http://127.0.0.1:5000`. One known snag: `libsql` (the Turso client) sh
 
 | Page | Route | What it's for |
 | :--- | :--- | :--- |
-| Overview | `/` | Stat tiles and quick links into each queue below |
-| New leads | `/leads/new` | A clean scrape gets approved and sent automatically; edit or reject one here before that happens |
-| Name fixes | `/leads/name-fix` | Correct a company name the scraper couldn't parse cleanly |
-| Missing email | `/leads/missing-email` | Supply an email by hand when scraping found none |
-| Sent | `/leads/sent` | Flag a reply (stops follow-ups) or a bounce (stops future sends) |
-| All companies | `/companies` | Read-only table of the whole queue |
-| Your CV | `/cv` | View the current CV or upload a replacement |
+| Overview | `/` | What needs you, what goes out next, who owes you a reply; pipeline schedule and last-run status; recent changes |
+| Needs you | `/attention` | Every lead the pipeline couldn't finish: unclear name, no email found, or a failed send. Each has its fix inline; fixing one puts it back in the queue |
+| Up next | `/upcoming` | What the next 09:00 send will email, in order, with which ones fit the 15-a-day cap. "Don't send" holds one back. Also lists leads still waiting for the scraper to find an email |
+| Awaiting reply | `/sent` | Everything sent, filterable by awaiting / replied / bounced. Marking a reply or bounce stops the follow-up; undo is one click |
+| Companies | `/companies` | Search and filter the whole queue; every row opens its edit page |
+| Company | `/companies/<name>` | Edit any field or status, quick actions (retry, restore, don't email), history, delete |
+| Add company | `/companies/new` | Add a lead you found yourself. With an email it goes out at the next send; with a website, the next scrape finds the email |
+| Activity | `/activity` | Every email the pipeline sent, and every change to the queue by the pipeline or by you |
+| Settings | `/settings` | Run scrape/send now, edit the scraper's searches, replace your CV |
 
 A shared tab bar with live counts sits under the header on every page.
+
+### Editing at the same time as the pipeline
+
+Every dashboard write is pinned to the version of the queue it read. If a pipeline run commits in between, GitHub rejects the write and the dashboard re-reads and re-applies your change instead of overwriting the run's. In the other direction, both workflows rebase onto any dashboard edits made while they ran before pushing, so a send run's "Sent" marks aren't lost (which would re-send those emails the next day). The two workflows also share a concurrency group, so "Run now" can't start one on top of the other.
 
 ---
 

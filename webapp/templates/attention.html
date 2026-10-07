@@ -1,0 +1,92 @@
+{% extends "base_app.html" %}
+{% block title %}Needs you · Outreach Triage Desk{% endblock %}
+{% block page_title %}Needs you{% endblock %}
+{% block page_sub %}Leads the pipeline couldn't finish on its own. Fix one and it rejoins the queue automatically; drop it and it's never emailed.{% endblock %}
+{% block content %}
+
+{% macro secondary(c) %}
+  <div class="row-actions" style="margin-top: 10px;">
+    <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
+      <input type="hidden" name="status" value="Rejected">
+      <input type="hidden" name="next" value="{{ url_for('attention') }}">
+      <button type="submit" class="ghost sm">Drop, don't email</button>
+    </form>
+    <a href="{{ url_for('company_detail', slug=c.slug) }}" class="btn ghost sm">Edit all details</a>
+  </div>
+{% endmacro %}
+
+{% macro site(c) %}
+  {% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener" class="mono">{{ c.host or c.website }} &nearr;</a>
+  {% else %}<span class="muted small">no website</span>{% endif %}
+{% endmacro %}
+
+{% if not total %}
+<section class="panel card-box">
+  <div class="empty">Nothing needs you right now. When the scraper can't resolve a lead you'll get an email and it'll show up here.</div>
+</section>
+{% endif %}
+
+{% if groups.name %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>Unclear company name</h2><span class="count-badge">{{ groups.name|length }}</span></div>
+  <p class="hint">The page title didn't give a clean name, or the name didn't match the website, so the scraper wouldn't trust it in a "Dear ... team" letter. Check the site and type the real name. Add an email too if you have one and it goes out at the next send; otherwise the next scrape looks for one.</p>
+  <div class="rows">
+    {% for c in groups.name %}
+    <div class="row-item">
+      <div class="row-top"><span class="name">{{ c.company_name }}</span>{{ site(c) }}</div>
+      <form method="post" action="{{ url_for('company_resolve', slug=c.slug) }}" class="row-form">
+        <input type="hidden" name="reason" value="name">
+        <input type="hidden" name="next" value="{{ url_for('attention') }}">
+        <div class="field"><label for="n-{{ c.slug }}">Real company name</label><input id="n-{{ c.slug }}" type="text" name="company_name" value="{{ c.company_name }}" required></div>
+        <div class="field"><label for="e-{{ c.slug }}">Email (optional)</label><input id="e-{{ c.slug }}" type="email" name="email" value="{{ c.email if c.email != 'no_email_found' }}" placeholder="careers@company.com"></div>
+        <button type="submit">Save</button>
+      </form>
+      {{ secondary(c) }}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if groups.email %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>No email found</h2><span class="count-badge">{{ groups.email|length }}</span></div>
+  <p class="hint">The scraper crawled the site and found no contact address. Look for a careers, HR or contact email (the site's contact page, LinkedIn, or a job post) and it goes out at the next send.</p>
+  <div class="rows">
+    {% for c in groups.email %}
+    <div class="row-item">
+      <div class="row-top"><span class="name">{{ c.company_name }}</span>{{ site(c) }}</div>
+      <form method="post" action="{{ url_for('company_resolve', slug=c.slug) }}" class="row-form">
+        <input type="hidden" name="reason" value="email">
+        <input type="hidden" name="next" value="{{ url_for('attention') }}">
+        <div class="field"><label for="e-{{ c.slug }}">Email</label><input id="e-{{ c.slug }}" type="email" name="email" placeholder="careers@company.com" required></div>
+        <button type="submit">Save</button>
+      </form>
+      {{ secondary(c) }}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if groups.failed %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>Send failed</h2><span class="count-badge">{{ groups.failed|length }}</span></div>
+  <p class="hint">Gmail refused or dropped the connection when this was sent. Usually temporary; retry puts it back in the next send. If the address itself looks wrong, correct it first.</p>
+  <div class="rows">
+    {% for c in groups.failed %}
+    <div class="row-item">
+      <div class="row-top"><span class="name">{{ c.company_name }}</span>{{ site(c) }}</div>
+      <form method="post" action="{{ url_for('company_resolve', slug=c.slug) }}" class="row-form">
+        <input type="hidden" name="reason" value="failed">
+        <input type="hidden" name="next" value="{{ url_for('attention') }}">
+        <div class="field"><label for="e-{{ c.slug }}">Email</label><input id="e-{{ c.slug }}" type="email" name="email" value="{{ c.email }}" required></div>
+        <button type="submit">Retry at next send</button>
+      </form>
+      {{ secondary(c) }}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

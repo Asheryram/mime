@@ -1,0 +1,62 @@
+{% extends "base_app.html" %}
+{% from "_macros.html" import company_link %}
+{% block title %}Up next · Outreach Triage Desk{% endblock %}
+{% block page_title %}Up next{% endblock %}
+{% block page_sub %}Clean leads go out automatically at the next send, {{ next_send|when }} UTC, in this order, {{ limit }} a day. Hold back anything you don't want sent.{% endblock %}
+{% block content %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>Queued to send</h2><span class="count-badge">{{ rows|length }}</span></div>
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>#</th><th>Company</th><th>Email</th><th>Website</th><th>Type</th><th>Goes out</th><th></th></tr></thead>
+      <tbody>
+        {% for c in rows %}
+        <tr>
+          <td class="num">{{ loop.index }}</td>
+          <td>{{ company_link(c) }}</td>
+          <td class="mono">{{ c.email }}</td>
+          <td class="nowrap">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.host }} &nearr;</a>{% endif %}</td>
+          <td class="muted">{{ c.company_type }} &middot; {{ c.track }}</td>
+          <td class="nowrap">
+            {% if loop.index <= limit %}<span class="pill today">{{ next_send|when }}</span>
+            {% else %}<span class="pill later">a later day</span>{% endif %}
+          </td>
+          <td class="nowrap" style="text-align: right;">
+            <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
+              <input type="hidden" name="status" value="Rejected">
+              <input type="hidden" name="next" value="{{ url_for('upcoming') }}">
+              <button type="submit" class="ghost sm">Don't send</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">Nothing queued. New clean leads land here after each scrape (next one {{ next_scrape|when }} UTC), or <a href="{{ url_for('company_new') }}">add one yourself</a>.</div>
+  {% endif %}
+</section>
+
+{% if scraping %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>Waiting for the scraper</h2><span class="count-badge">{{ scraping|length }}</span></div>
+  <p class="hint">No email yet. The next scrape ({{ next_scrape|when }} UTC) crawls their sites; anything it finds moves up to the queue above, anything it can't moves to Needs you. The scraper takes 5 per run.</p>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Company</th><th>Website</th><th>Added</th></tr></thead>
+      <tbody>
+        {% for c in scraping %}
+        <tr>
+          <td>{{ company_link(c) }}</td>
+          <td class="nowrap">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.host }} &nearr;</a>{% else %}<span class="muted">will be looked up</span>{% endif %}</td>
+          <td class="muted nowrap">{{ c.date_added }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
