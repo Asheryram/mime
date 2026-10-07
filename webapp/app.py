@@ -7,7 +7,9 @@ from email.message import EmailMessage
 from functools import wraps
 
 import requests
-from flask import Flask, request, session, redirect, url_for, render_template, flash, Response, g
+from urllib.parse import quote_plus
+
+from flask import Flask, request, session, redirect, url_for, render_template, flash, Response, g, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -34,6 +36,8 @@ _load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB, generous for a CV PDF
+# Forms have no CSRF tokens; Lax keeps the session cookie off cross-site POSTs.
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 ALLOWED_EMAIL = os.environ.get("ALLOWED_EMAIL", "ashertettehabotsi@gmail.com").strip().lower()
 COMPANY_TYPES = ["fintech", "consultancy", "isp", "bank", "general_startup"]
@@ -244,6 +248,64 @@ def shell_context():
     }
 
 
+def wants_json():
+    """The triage page saves in place with fetch(); plain form posts still redirect."""
+    return request.headers.get("Accept", "").startswith("application/json")
+
+
+def respond(ok, message, default_endpoint, **extra):
+    if wants_json():
+        return jsonify(ok=ok, message=message, **extra), (200 if ok else 400)
+    flash(message, "success" if ok else "error")
+    return safe_next(default_endpoint)
+
+
+# Labels that never identify the company in a hostname ("careers.acme.com.gh").
+COMMON_TLDS = {"com", "net", "org", "io", "co", "gh", "africa", "tech", "ng", "uk", "ke", "za",
+               "biz", "info", "app", "dev", "ai", "edu", "gov"}
+SUBDOMAIN_NOISE = {"careers", "jobs", "about", "en", "blog", "app", "portal", "web"}
+
+
+def email_domain(host):
+    parts = [p for p in (host or "").split(".") if p]
+    if len(parts) > 2 and parts[0] in SUBDOMAIN_NOISE:
+        parts = parts[1:]
+    return ".".join(parts)
+
+
+def name_from_host(host):
+    parts = [p for p in (host or "").split(".") if p]
+    while len(parts) > 1 and parts[-1] in COMMON_TLDS:
+        parts.pop()
+    if not parts:
+        return ""
+    words = [w for w in re.split(r"[-_]+", parts[-1]) if w]
+    return " ".join(w if any(ch.isdigit() for ch in w) else w.capitalize() for w in words)
+
+
+def triage_item(c):
+    """Everything the Needs you page shows for one row, including suggested fixes."""
+    reason = attention_reason(c)
+    host = c["host"]
+    domain = email_domain(host)
+    current = c["email"] if has_email(c) else ""
+    guess = name_from_host(host)
+    return {
+        "slug": c["slug"],
+        "name": c["company_name"],
+        "website": c["website"],
+        "host": host,
+        "email": current,
+        "reason": reason,
+        "type": c["company_type"],
+        "added": c["date_added"],
+        "name_suggestion": guess if guess and guess.lower() != c["company_name"].strip().lower() else "",
+        "email_suggestions": [e for e in (f"{p}@{domain}" for p in ("careers", "hr", "jobs", "info")) if e != current] if domain else [],
+        "google": "https://www.google.com/search?q=" + quote_plus(f'"{domain or c["company_name"]}" email careers OR hr OR contact'),
+        "linkedin": "https://www.linkedin.com/search/results/companies/?keywords=" + quote_plus(guess or c["company_name"]),
+    }
+
+
 def safe_next(default_endpoint):
     """Redirect back to the page a form came from, but only to a path on this site."""
     nxt = request.form.get("next", "")
@@ -353,16 +415,22 @@ def safe_call(fn, *args, fallback=None):
 
 @app.errorhandler(state_repo.ConflictError)
 def handle_conflict(_e):
-    flash("The pipeline changed the queue at the same moment. Nothing was saved, please try again.", "error")
+    message = "The pipeline changed the queue at the same moment. Nothing was saved, please try again."
+    if wants_json():
+        return jsonify(ok=False, message=message), 409
+    flash(message, "error")
     return redirect(request.referrer if (request.referrer or "").startswith(request.host_url) else url_for("overview"))
 
 
 @app.errorhandler(requests.RequestException)
 def handle_github_error(e):
-    return render_template("error.html", message=(
+    message = (
         "Couldn't reach GitHub to read or save the queue. This is usually temporary; "
         "if it keeps happening, check that GITHUB_TOKEN is valid and has access to the companion repo."
-    ), detail=str(e)), 502
+    )
+    if wants_json():
+        return jsonify(ok=False, message=message), 502
+    return render_template("error.html", message=message, detail=str(e)), 502
 
 
 # --- Pages ------------------------------------------------------------------------
@@ -418,11 +486,43 @@ def overview():
 @login_required
 def attention():
     companies, nav = load_data()
-    rows = [c for c in companies if c["bucket"] == "attention"]
-    groups = {"name": [], "email": [], "failed": []}
-    for c in rows:
-        groups[attention_reason(c)].append(c)
-    return render_template("attention.html", active="attention", nav=nav, groups=groups, total=len(rows))
+    order = {"email": 0, "name": 1, "failed": 2}
+    items = sorted(
+        (triage_item(c) for c in companies if c["bucket"] == "attention"),
+        key=lambda i: (order[i["reason"]], i["name"].lower()),
+    )
+    return render_template("attention.html", active="attention", nav=nav, items=items)
+
+
+@app.route("/attention/bulk", methods=["POST"])
+@login_required
+def attention_bulk():
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    slugs = set(data.get("slugs") or [])
+    if action not in ("drop", "retry") or not slugs:
+        return jsonify(ok=False, message="Nothing selected."), 400
+
+    def fn(rows):
+        done = []
+        for r in rows:
+            slug = state_repo.slugify(r["company_name"])
+            if slug not in slugs:
+                continue
+            if action == "drop":
+                r["status"] = "Rejected"
+                done.append(slug)
+            elif r["status"] == "Failed":
+                r["status"] = "Approved"
+                done.append(slug)
+        return done
+
+    done = state_repo.mutate_queue(fn, f"{'Drop' if action == 'drop' else 'Retry'} {len(slugs)} leads via dashboard")
+    if action == "drop":
+        message = f"Dropped {len(done)}. They won't be emailed."
+    else:
+        message = f"{len(done)} will be retried at the next send." + ("" if len(done) == len(slugs) else " Only failed sends can be retried.")
+    return jsonify(ok=True, done=done, message=message)
 
 
 @app.route("/upcoming")
@@ -613,17 +713,16 @@ def company_resolve(slug):
             message = "Resolve {} via dashboard"
         row = state_repo.update_company(slug, changes, message.format(name or slug))
     except ValueError as e:
-        flash(str(e), "error")
+        return respond(False, str(e), "attention")
     except KeyError:
-        flash("That company isn't in the queue any more.", "error")
+        return respond(False, "That company isn't in the queue any more.", "attention")
+    if reason == "failed":
+        msg = f"{row['company_name']} will be retried at the next send."
+    elif has_email(row):
+        msg = f"{row['company_name']} is fixed and goes out with the next send."
     else:
-        if reason == "failed":
-            flash(f"{row['company_name']} will be retried at the next send.", "success")
-        elif has_email(row):
-            flash(f"{row['company_name']} is fixed and goes out with the next send.", "success")
-        else:
-            flash(f"{row['company_name']} is fixed. The next scrape will look for its email.", "success")
-    return safe_next("attention")
+        msg = f"{row['company_name']} is fixed. The next scrape will look for its email."
+    return respond(True, msg, "attention")
 
 
 @app.route("/companies/<slug>/status", methods=["POST"])
@@ -631,16 +730,13 @@ def company_resolve(slug):
 def company_status(slug):
     status = request.form.get("status")
     if status not in ("Rejected", "Pending", "Approved"):
-        flash("That status change isn't allowed from here.", "error")
-        return safe_next("companies_list")
+        return respond(False, "That status change isn't allowed from here.", "companies_list")
     try:
         row = state_repo.update_company(slug, {"status": status}, f"Set {slug} to {status}")
     except KeyError:
-        flash("That company isn't in the queue any more.", "error")
-    else:
-        labels = {"Rejected": "won't be emailed", "Pending": "is back in the queue", "Approved": "goes out with the next send"}
-        flash(f"{row['company_name']} {labels[status]}.", "success")
-    return safe_next("companies_list")
+        return respond(False, "That company isn't in the queue any more.", "companies_list")
+    labels = {"Rejected": "won't be emailed", "Pending": "is back in the queue", "Approved": "goes out with the next send"}
+    return respond(True, f"{row['company_name']} {labels[status]}.", "companies_list")
 
 
 @app.route("/companies/<slug>/flag", methods=["POST"])

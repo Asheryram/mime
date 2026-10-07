@@ -1,92 +1,320 @@
 {% extends "base_app.html" %}
+{% from "_macros.html" import icon %}
 {% block title %}Needs you · Outbound{% endblock %}
+{% block main_class %}fit{% endblock %}
 {% block page_title %}Needs you{% endblock %}
-{% block page_sub %}Leads the pipeline couldn't finish on its own. Fix one and it rejoins the queue automatically; drop it and it's never emailed.{% endblock %}
+{% block page_sub %}Leads the pipeline couldn't finish. Fix one and it rejoins the queue on its own; drop it and it's never emailed.{% endblock %}
 {% block content %}
+<div id="triage"
+     data-resolve="{{ url_for('company_resolve', slug='__S__') }}"
+     data-status="{{ url_for('company_status', slug='__S__') }}"
+     data-detail="{{ url_for('company_detail', slug='__S__') }}"
+     data-bulk="{{ url_for('attention_bulk') }}">
 
-{% macro secondary(c) %}
-  <div class="row-actions" style="margin-top: 10px;">
-    <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
-      <input type="hidden" name="status" value="Rejected">
-      <input type="hidden" name="next" value="{{ url_for('attention') }}">
-      <button type="submit" class="ghost sm">Drop, don't email</button>
-    </form>
-    <a href="{{ url_for('company_detail', slug=c.slug) }}" class="btn ghost sm">Edit all details</a>
-  </div>
-{% endmacro %}
-
-{% macro site(c) %}
-  {% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener" class="mono">{{ c.host or c.website }} &nearr;</a>
-  {% else %}<span class="muted small">no website</span>{% endif %}
-{% endmacro %}
-
-{% if not total %}
-<section class="panel card-box">
-  <div class="empty">Nothing needs you right now. When the scraper can't resolve a lead you'll get an email and it'll show up here.</div>
-</section>
-{% endif %}
-
-{% if groups.name %}
-<section class="panel card-box">
-  <div class="panel-head"><h2>Unclear company name</h2><span class="count-badge">{{ groups.name|length }}</span></div>
-  <p class="hint">The page title didn't give a clean name, or the name didn't match the website, so the scraper wouldn't trust it in a "Dear ... team" letter. Check the site and type the real name. Add an email too if you have one and it goes out at the next send; otherwise the next scrape looks for one.</p>
-  <div class="rows">
-    {% for c in groups.name %}
-    <div class="row-item">
-      <div class="row-top"><span class="name">{{ c.company_name }}</span>{{ site(c) }}</div>
-      <form method="post" action="{{ url_for('company_resolve', slug=c.slug) }}" class="row-form">
-        <input type="hidden" name="reason" value="name">
-        <input type="hidden" name="next" value="{{ url_for('attention') }}">
-        <div class="field"><label for="n-{{ c.slug }}">Real company name</label><input id="n-{{ c.slug }}" type="text" name="company_name" value="{{ c.company_name }}" required></div>
-        <div class="field"><label for="e-{{ c.slug }}">Email (optional)</label><input id="e-{{ c.slug }}" type="email" name="email" value="{{ c.email if c.email != 'no_email_found' }}" placeholder="careers@company.com"></div>
-        <button type="submit">Save</button>
-      </form>
-      {{ secondary(c) }}
+  <div class="triage-bar">
+    <div class="chips" id="t-filters" role="tablist" aria-label="Filter by problem"></div>
+    <div class="triage-keys faint small">
+      <kbd>j</kbd><kbd>k</kbd><span>move</span>
+      <kbd>e</kbd><span>edit</span>
+      <kbd>↵</kbd><span>save &amp; next</span>
+      <kbd>x</kbd><span>drop</span>
+      <kbd>o</kbd><span>open site</span>
     </div>
-    {% endfor %}
   </div>
-</section>
-{% endif %}
 
-{% if groups.email %}
-<section class="panel card-box">
-  <div class="panel-head"><h2>No email found</h2><span class="count-badge">{{ groups.email|length }}</span></div>
-  <p class="hint">The scraper crawled the site and found no contact address. Look for a careers, HR or contact email (the site's contact page, LinkedIn, or a job post) and it goes out at the next send.</p>
-  <div class="rows">
-    {% for c in groups.email %}
-    <div class="row-item">
-      <div class="row-top"><span class="name">{{ c.company_name }}</span>{{ site(c) }}</div>
-      <form method="post" action="{{ url_for('company_resolve', slug=c.slug) }}" class="row-form">
-        <input type="hidden" name="reason" value="email">
-        <input type="hidden" name="next" value="{{ url_for('attention') }}">
-        <div class="field"><label for="e-{{ c.slug }}">Email</label><input id="e-{{ c.slug }}" type="email" name="email" placeholder="careers@company.com" required></div>
-        <button type="submit">Save</button>
-      </form>
-      {{ secondary(c) }}
+  <div class="triage-body" id="t-body">
+    <div class="tlist card-box">
+      <div class="tlist-head">
+        <label class="check"><input type="checkbox" id="t-all" aria-label="Select all shown"> <span id="t-count"></span></label>
+        <div class="bulk" id="t-bulk" hidden>
+          <button type="button" class="sm ghost" id="t-bulk-retry">Retry</button>
+          <button type="button" class="sm danger" id="t-bulk-drop">Drop</button>
+        </div>
+      </div>
+      <ul class="titems" id="t-items" role="listbox" aria-label="Leads that need you"></ul>
     </div>
-    {% endfor %}
+    <section class="tdetail card-box" id="t-detail" aria-live="polite"></section>
   </div>
-</section>
-{% endif %}
 
-{% if groups.failed %}
-<section class="panel card-box">
-  <div class="panel-head"><h2>Send failed</h2><span class="count-badge">{{ groups.failed|length }}</span></div>
-  <p class="hint">Gmail refused or dropped the connection when this was sent. Usually temporary; retry puts it back in the next send. If the address itself looks wrong, correct it first.</p>
-  <div class="rows">
-    {% for c in groups.failed %}
-    <div class="row-item">
-      <div class="row-top"><span class="name">{{ c.company_name }}</span>{{ site(c) }}</div>
-      <form method="post" action="{{ url_for('company_resolve', slug=c.slug) }}" class="row-form">
-        <input type="hidden" name="reason" value="failed">
-        <input type="hidden" name="next" value="{{ url_for('attention') }}">
-        <div class="field"><label for="e-{{ c.slug }}">Email</label><input id="e-{{ c.slug }}" type="email" name="email" value="{{ c.email }}" required></div>
-        <button type="submit">Retry at next send</button>
-      </form>
-      {{ secondary(c) }}
-    </div>
-    {% endfor %}
+  <div class="card-box all-clear" id="t-clear" hidden>
+    <div class="big">All clear</div>
+    <div class="muted">Nothing needs you. When a scrape can't resolve a lead you'll get an email, and it'll show up here.</div>
   </div>
-</section>
-{% endif %}
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script id="t-data" type="application/json">{{ items|tojson }}</script>
+<noscript><div class="flash error">This page needs JavaScript. You can still fix each lead from its page under Companies.</div></noscript>
+
+<script>
+(function () {
+  var root = document.getElementById("triage");
+  var items = JSON.parse(document.getElementById("t-data").textContent);
+  var URL_RESOLVE = root.dataset.resolve, URL_STATUS = root.dataset.status, URL_DETAIL = root.dataset.detail, URL_BULK = root.dataset.bulk;
+  var REASONS = {
+    email: { label: "No email found", short: "No email",
+             why: "The scraper crawled the site and found no contact address. Find a careers, HR or contact email and it goes out at the next send." },
+    name: { label: "Unclear company name", short: "Unclear name",
+            why: "The page title didn't give a name the scraper could trust in a “Dear … team” letter. Check the site and type the real one. Add an email if you have it; otherwise the next scrape looks for one." },
+    failed: { label: "Send failed", short: "Send failed",
+              why: "Gmail refused or dropped the connection when this was sent. Usually temporary. Fix the address if it looks wrong, then retry at the next send." }
+  };
+  var filter = "all", selSlug = null, checked = {};
+  var els = {
+    filters: document.getElementById("t-filters"), list: document.getElementById("t-items"),
+    detail: document.getElementById("t-detail"), body: document.getElementById("t-body"),
+    clear: document.getElementById("t-clear"), count: document.getElementById("t-count"),
+    all: document.getElementById("t-all"), bulk: document.getElementById("t-bulk"),
+    toast: document.getElementById("toast")
+  };
+  var mobile = matchMedia("(max-width: 860px)");
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    for (var k in (attrs || {})) {
+      if (k === "text") el.textContent = attrs[k];
+      else if (k === "on") for (var ev in attrs.on) el.addEventListener(ev, attrs.on[ev]);
+      else if (attrs[k] !== null && attrs[k] !== undefined && attrs[k] !== false) el.setAttribute(k, attrs[k] === true ? "" : attrs[k]);
+    }
+    (kids || []).forEach(function (c) { if (c) el.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return el;
+  }
+  function shown() { return items.filter(function (i) { return filter === "all" || i.reason === filter; }); }
+  function bySlug(s) { return items.filter(function (i) { return i.slug === s; })[0]; }
+
+  function toast(msg, isErr) {
+    els.toast.textContent = msg;
+    els.toast.className = "toast" + (isErr ? " error" : "");
+    els.toast.hidden = false;
+    clearTimeout(toast.t);
+    toast.t = setTimeout(function () { els.toast.hidden = true; }, isErr ? 6000 : 3200);
+  }
+
+  function updateNavCount() {
+    var link = document.querySelector('.nav-item[href="{{ url_for("attention") }}"] .nav-count');
+    if (link) { link.textContent = items.length; link.classList.toggle("hot", items.length > 0); }
+  }
+
+  function renderFilters() {
+    els.filters.innerHTML = "";
+    var counts = { all: items.length, email: 0, name: 0, failed: 0 };
+    items.forEach(function (i) { counts[i.reason]++; });
+    [["all", "All"], ["email", "No email"], ["name", "Unclear name"], ["failed", "Send failed"]].forEach(function (f) {
+      if (f[0] !== "all" && !counts[f[0]] && filter !== f[0]) return;
+      els.filters.appendChild(h("a", {
+        href: "#", role: "tab", "aria-selected": filter === f[0] ? "true" : "false",
+        class: "chip" + (filter === f[0] ? " active" : ""),
+        on: { click: function (e) { e.preventDefault(); filter = f[0]; selSlug = null; render(); } }
+      }, [f[1], h("span", { class: "n", text: String(counts[f[0]]) })]));
+    });
+  }
+
+  function renderList() {
+    var list = shown();
+    els.list.innerHTML = "";
+    list.forEach(function (i) {
+      var box = h("input", { type: "checkbox", "aria-label": "Select " + i.name, checked: !!checked[i.slug] });
+      box.addEventListener("click", function (e) { e.stopPropagation(); });
+      box.addEventListener("change", function () { if (box.checked) checked[i.slug] = true; else delete checked[i.slug]; renderBulk(); });
+      var li = h("li", {
+        class: "titem" + (i.slug === selSlug ? " sel" : ""), role: "option", "aria-selected": i.slug === selSlug ? "true" : "false",
+        "data-slug": i.slug, on: { click: function () { select(i.slug, true); } }
+      }, [
+        box,
+        h("span", { class: "t-name", text: i.name }),
+        h("span", { class: "t-meta" }, [
+          h("span", { class: "reason " + i.reason, text: REASONS[i.reason].short }),
+          i.host ? h("span", { class: "mono", text: "· " + i.host }) : null
+        ])
+      ]);
+      els.list.appendChild(li);
+    });
+    els.count.textContent = list.length + (list.length === 1 ? " lead" : " leads");
+    els.all.checked = list.length > 0 && list.every(function (i) { return checked[i.slug]; });
+    renderBulk();
+  }
+
+  function renderBulk() {
+    var n = Object.keys(checked).length;
+    els.bulk.hidden = n === 0;
+    if (n) els.count.textContent = n + " selected";
+    else els.count.textContent = shown().length + (shown().length === 1 ? " lead" : " leads");
+    var anyFailed = Object.keys(checked).some(function (s) { var i = bySlug(s); return i && i.reason === "failed"; });
+    document.getElementById("t-bulk-retry").hidden = !anyFailed;
+  }
+
+  function field(id, label, input, sugg) {
+    return h("div", { class: "t-field" }, [h("label", { for: id, text: label }), input, sugg]);
+  }
+
+  function renderDetail() {
+    var i = bySlug(selSlug);
+    els.detail.innerHTML = "";
+    if (!i) return;
+    var list = shown(), pos = list.indexOf(i) + 1, r = REASONS[i.reason];
+    var err = h("p", { class: "t-error", hidden: true });
+
+    var nameInput = h("input", { type: "text", id: "t-name", name: "company_name", value: i.name, required: true, autocomplete: "off" });
+    var emailInput = h("input", { type: "email", id: "t-email", name: "email", value: i.email, autocomplete: "off",
+                                  placeholder: "careers@" + (i.host || "company.com"), required: i.reason !== "name" });
+
+    function chip(text, target) {
+      return h("button", { type: "button", title: "Use " + text,
+        on: { click: function () { target.value = text; target.focus(); } } }, [text]);
+    }
+    var emailSugg = h("div", { class: "sugg" }, [i.email_suggestions.length ? "Common addresses:" : null]
+      .concat(i.email_suggestions.map(function (e) { return chip(e, emailInput); }))
+      .concat([h("span", { text: " Find it:" }),
+               h("a", { href: i.google, target: "_blank", rel: "noopener", text: "Google ↗" }),
+               h("a", { href: i.linkedin, target: "_blank", rel: "noopener", text: "LinkedIn ↗" })]));
+    var nameSugg = i.name_suggestion
+      ? h("div", { class: "sugg" }, ["From the domain:", chip(i.name_suggestion, nameInput)]) : null;
+
+    var fields = [];
+    if (i.reason === "name") fields.push(field("t-name", "Real company name", nameInput, nameSugg));
+    fields.push(field("t-email", i.reason === "name" ? "Email (optional)" : "Email", emailInput, emailSugg));
+
+    var saveBtn = h("button", { type: "submit", class: "primary" }, [i.reason === "failed" ? "Retry & next" : "Save & next", h("kbd", { text: "↵" })]);
+    var form = h("form", { novalidate: true }, [err].concat(fields).concat([
+      h("div", { class: "t-actions" }, [
+        saveBtn,
+        h("button", { type: "button", class: "ghost", on: { click: function () { drop(i); } } }, ["Drop", h("kbd", { text: "x" })]),
+        h("button", { type: "button", class: "ghost", on: { click: function () { move(1); } } }, ["Skip", h("kbd", { text: "j" })]),
+        h("span", { class: "progress", text: pos + " / " + list.length })
+      ])
+    ]));
+    form.addEventListener("submit", function (e) { e.preventDefault(); save(i, form, err, saveBtn); });
+    form.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { document.activeElement.blur(); e.stopPropagation(); }
+    });
+
+    els.detail.appendChild(h("div", { class: "t-head" }, [
+      h("div", {}, [h("h2", { text: i.name }), h("span", { class: "reason " + i.reason, text: r.label })]),
+      h("div", { class: "links" }, [
+        i.website ? h("a", { class: "btn ghost sm", href: i.website, target: "_blank", rel: "noopener", id: "t-open" }, ["Open site ↗"]) : null,
+        h("a", { class: "btn ghost sm", href: URL_DETAIL.replace("__S__", i.slug), text: "All details" }),
+        h("button", { type: "button", class: "icon-btn t-close", "aria-label": "Close", on: { click: function () { els.detail.classList.remove("open"); } } }, ["✕"])
+      ])
+    ]));
+    els.detail.appendChild(h("p", { class: "t-why", text: r.why }));
+    els.detail.appendChild(form);
+  }
+
+  function render() {
+    var list = shown();
+    renderFilters();
+    if (!items.length) { els.body.hidden = true; els.clear.hidden = false; return; }
+    els.body.hidden = false; els.clear.hidden = true;
+    if (!bySlug(selSlug) || list.indexOf(bySlug(selSlug)) === -1) selSlug = list.length ? list[0].slug : null;
+    renderList();
+    renderDetail();
+  }
+
+  function select(slug, fromClick) {
+    selSlug = slug;
+    Array.prototype.forEach.call(els.list.children, function (li) {
+      var on = li.dataset.slug === slug;
+      li.classList.toggle("sel", on); li.setAttribute("aria-selected", on ? "true" : "false");
+      if (on) li.scrollIntoView({ block: "nearest" });
+    });
+    renderDetail();
+    if (mobile.matches && fromClick) els.detail.classList.add("open");
+  }
+  function move(step) {
+    var list = shown(); if (!list.length) return;
+    var idx = list.indexOf(bySlug(selSlug));
+    select(list[Math.max(0, Math.min(list.length - 1, idx + step))].slug);
+  }
+
+  function removeItems(slugs, wasTyping) {
+    var list = shown(), idx = list.indexOf(bySlug(selSlug));
+    items = items.filter(function (i) { return slugs.indexOf(i.slug) === -1; });
+    slugs.forEach(function (s) { delete checked[s]; });
+    var rest = shown();
+    if (slugs.indexOf(selSlug) !== -1) selSlug = rest.length ? rest[Math.min(idx, rest.length - 1)].slug : null;
+    if (!rest.length && items.length) { filter = "all"; selSlug = null; }
+    updateNavCount();
+    render();
+    if (!items.length) els.detail.classList.remove("open");
+    // Keep the flow going: if you were typing, land in the next lead's field.
+    if (wasTyping && selSlug) {
+      var f = document.getElementById(bySlug(selSlug).reason === "name" ? "t-name" : "t-email");
+      if (f) { f.focus(); f.select && f.select(); }
+    }
+  }
+
+  function post(url, body, json) {
+    return fetch(url, {
+      method: "POST", credentials: "same-origin",
+      headers: json ? { "Accept": "application/json", "Content-Type": "application/json" } : { "Accept": "application/json" },
+      body: body
+    }).then(function (res) {
+      return res.json().catch(function () { return { ok: false, message: "Unexpected response (" + res.status + "). Reload and try again." }; });
+    }, function () { return { ok: false, message: "Network error. Check your connection and try again." }; });
+  }
+
+  function save(i, form, err, btn) {
+    var name = form.querySelector("#t-name"), email = form.querySelector("#t-email");
+    if (i.reason === "name" && !name.value.trim()) { err.textContent = "Enter the company's real name."; err.hidden = false; name.focus(); return; }
+    if (i.reason !== "name" && !email.value.trim()) { err.textContent = "Enter an email address."; err.hidden = false; email.focus(); return; }
+    var typing = form.contains(document.activeElement);
+    var data = new FormData();
+    data.append("reason", i.reason);
+    if (name) data.append("company_name", name.value.trim());
+    data.append("email", email.value.trim());
+    btn.disabled = true;
+    post(URL_RESOLVE.replace("__S__", i.slug), data).then(function (res) {
+      btn.disabled = false;
+      if (!res.ok) { err.textContent = res.message; err.hidden = false; return; }
+      toast(res.message);
+      removeItems([i.slug], typing);
+    });
+  }
+
+  function drop(i) {
+    var data = new FormData(); data.append("status", "Rejected");
+    post(URL_STATUS.replace("__S__", i.slug), data).then(function (res) {
+      if (!res.ok) { toast(res.message, true); return; }
+      toast(res.message); removeItems([i.slug], false);
+    });
+  }
+
+  function bulk(action) {
+    var slugs = Object.keys(checked);
+    if (!slugs.length) return;
+    if (action === "drop" && !confirm("Drop " + slugs.length + " lead" + (slugs.length === 1 ? "" : "s") + "? They won't be emailed.")) return;
+    post(URL_BULK, JSON.stringify({ action: action, slugs: slugs }), true).then(function (res) {
+      if (!res.ok) { toast(res.message, true); return; }
+      toast(res.message);
+      removeItems(res.done, false);
+    });
+  }
+  document.getElementById("t-bulk-drop").addEventListener("click", function () { bulk("drop"); });
+  document.getElementById("t-bulk-retry").addEventListener("click", function () { bulk("retry"); });
+  els.all.addEventListener("change", function () {
+    shown().forEach(function (i) { if (els.all.checked) checked[i.slug] = true; else delete checked[i.slug]; });
+    renderList();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT");
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!document.getElementById("palette").hidden || !document.getElementById("help").hidden) return;
+    var i = bySlug(selSlug);
+    if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
+    else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+    else if ((e.key === "e" || e.key === "Enter") && i) {
+      e.preventDefault();
+      var f = document.getElementById(i.reason === "name" ? "t-name" : "t-email");
+      if (mobile.matches) els.detail.classList.add("open");
+      if (f) { f.focus(); f.select(); }
+    }
+    else if (e.key === "x" && i) { e.preventDefault(); drop(i); }
+    else if (e.key === "o" && i && i.website) { e.preventDefault(); window.open(i.website, "_blank", "noopener"); }
+    else if (e.key === " " && i) { e.preventDefault(); if (checked[i.slug]) delete checked[i.slug]; else checked[i.slug] = true; renderList(); }
+  });
+
+  render();
+})();
+</script>
 {% endblock %}

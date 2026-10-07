@@ -90,7 +90,7 @@ Opens on `http://127.0.0.1:5000`. One known snag: `libsql` (the Turso client) sh
 | Page | Route | What it's for |
 | :--- | :--- | :--- |
 | Overview | `/` | What needs you, what goes out next, who owes you a reply; pipeline schedule and last-run status; recent changes |
-| Needs you | `/attention` | Every lead the pipeline couldn't finish: unclear name, no email found, or a failed send. Each has its fix inline; fixing one puts it back in the queue |
+| Needs you | `/attention` | A triage inbox for every lead the pipeline couldn't finish (unclear name, no email found, failed send): list on the left, the selected lead's fix on the right, with suggested names and addresses and Google/LinkedIn search links. Saves in place and moves to the next lead; `j`/`k` move, `e` edits, Enter saves, `x` drops, Space selects for bulk drop/retry |
 | Up next | `/upcoming` | What the next 09:00 send will email, in order, with which ones fit the 15-a-day cap. "Don't send" holds one back. Also lists leads still waiting for the scraper to find an email |
 | Awaiting reply | `/sent` | Everything sent, filterable by awaiting / replied / bounced. Marking a reply or bounce stops the follow-up; undo is one click |
 | Companies | `/companies` | Search and filter the whole queue; every row opens its edit page |
