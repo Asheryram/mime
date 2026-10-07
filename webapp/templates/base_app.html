@@ -1,23 +1,219 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block body %}
-<div class="wrap">
-  <header class="topbar">
-    <div>
-      <h1>{% block page_title %}{% endblock %}</h1>
-      <div class="tagline">{% block page_sub %}{% endblock %}</div>
-    </div>
-    <div class="topbar-actions">
-      <a href="{{ url_for('company_new') }}" class="btn">+ Add company</a>
-      <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
-    </div>
-  </header>
-
+<div class="shell" id="shell">
   {% include "_nav.html" %}
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, msg in messages %}<div class="flash {{ category }}" role="status">{{ msg }}</div>{% endfor %}
-  {% endwith %}
+  <div class="main">
+    <div class="mobile-bar">
+      <button type="button" class="icon-btn" data-toggle-nav aria-label="Open navigation">{{ icon("menu") }}</button>
+      <span class="brand-name">Outbound</span>
+      <button type="button" class="icon-btn" data-open-palette aria-label="Search" style="margin-left:auto">{{ icon("search") }}</button>
+    </div>
 
-  {% block content %}{% endblock %}
+    <header class="page-head">
+      <div class="titles">
+        <h1>{% block page_title %}{% endblock %}</h1>
+        <div class="page-sub">{% block page_sub %}{% endblock %}</div>
+      </div>
+      <div class="page-actions">
+        {% block page_actions %}
+        <a href="{{ url_for('company_new') }}" class="btn primary">{{ icon("plus") }} Add company</a>
+        {% endblock %}
+      </div>
+    </header>
+
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, msg in messages %}<div class="flash {{ category }}" role="status">{{ msg }}</div>{% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </div>
+
+<div class="overlay" id="palette" hidden>
+  <div class="palette" role="dialog" aria-label="Command palette">
+    <input type="text" id="palette-input" placeholder="Type a company, page or action" autocomplete="off" spellcheck="false" aria-label="Search">
+    <ul id="palette-list" role="listbox"></ul>
+    <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+  </div>
+</div>
+
+<div class="overlay" id="help" hidden>
+  <div class="help" role="dialog" aria-label="Keyboard shortcuts">
+    <h2>Keyboard shortcuts</h2>
+    <dl>
+      <dt><kbd>⌘K</kbd> or <kbd>/</kbd></dt><dd>Search companies, pages and actions</dd>
+      <dt><kbd>g</kbd> <kbd>o</kbd></dt><dd>Overview</dd>
+      <dt><kbd>g</kbd> <kbd>n</kbd></dt><dd>Needs you</dd>
+      <dt><kbd>g</kbd> <kbd>u</kbd></dt><dd>Up next</dd>
+      <dt><kbd>g</kbd> <kbd>r</kbd></dt><dd>Awaiting reply</dd>
+      <dt><kbd>g</kbd> <kbd>c</kbd></dt><dd>Companies</dd>
+      <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Activity</dd>
+      <dt><kbd>g</kbd> <kbd>s</kbd></dt><dd>Settings</dd>
+      <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Move through rows</dd>
+      <dt><kbd>↵</kbd></dt><dd>Open the selected row</dd>
+      <dt><kbd>n</kbd></dt><dd>Add a company</dd>
+      <dt><kbd>?</kbd></dt><dd>This list</dd>
+    </dl>
+  </div>
+</div>
+
+<script>
+(function () {
+  var companies = {{ palette|tojson }};
+  var GO = {
+    o: "{{ url_for('overview') }}", n: "{{ url_for('attention') }}", u: "{{ url_for('upcoming') }}",
+    r: "{{ url_for('sent') }}", c: "{{ url_for('companies_list') }}", a: "{{ url_for('activity') }}",
+    s: "{{ url_for('settings') }}"
+  };
+  var detailBase = "{{ url_for('company_detail', slug='__S__') }}";
+  var pages = [
+    ["Overview", GO.o], ["Needs you", GO.n], ["Up next", GO.u], ["Awaiting reply", GO.r],
+    ["Companies", GO.c], ["Activity", GO.a], ["Settings", GO.s]
+  ].map(function (p) { return { label: p[0], kind: "Page", go: p[1] }; });
+  var actions = [
+    { label: "Add a company", kind: "Action", go: "{{ url_for('company_new') }}" },
+    { label: "Run scrape now", kind: "Action", post: "{{ url_for('settings_run', which='scrape') }}" },
+    { label: "Send now", kind: "Action", post: "{{ url_for('settings_run', which='send') }}",
+      confirm: "This emails real companies right now. Send everything in Up next?" },
+    { label: "Edit searches", kind: "Action", go: GO.s + "#queries" },
+    { label: "Replace CV", kind: "Action", go: GO.s + "#cv" }
+  ];
+
+  var overlay = document.getElementById("palette");
+  var input = document.getElementById("palette-input");
+  var list = document.getElementById("palette-list");
+  var help = document.getElementById("help");
+  var shown = [], sel = 0;
+
+  function score(text, q) {
+    text = text.toLowerCase();
+    if (!q) return 1;
+    if (text.indexOf(q) === 0) return 3;
+    if (text.indexOf(" " + q) !== -1) return 2;
+    return text.indexOf(q) !== -1 ? 1 : 0;
+  }
+  function render() {
+    var q = input.value.trim().toLowerCase();
+    var rank = function (arr) {
+      return arr.map(function (x) { return [score(x.label, q), x]; })
+        .filter(function (p) { return p[0] > 0; })
+        .sort(function (a, b) { return b[0] - a[0]; })
+        .map(function (p) { return p[1]; });
+    };
+    var cos = rank(companies.map(function (c) {
+      return { label: c.n, kind: c.st, go: detailBase.replace("__S__", c.s) };
+    })).slice(0, q ? 8 : 5);
+    var groups = [["Companies", cos], ["Pages", rank(pages)], ["Actions", rank(actions)]];
+    list.innerHTML = ""; shown = [];
+    groups.forEach(function (gr) {
+      if (!gr[1].length) return;
+      var h = document.createElement("div"); h.className = "group"; h.textContent = gr[0]; list.appendChild(h);
+      gr[1].forEach(function (item) {
+        var li = document.createElement("li"); li.setAttribute("role", "option");
+        var span = document.createElement("span"); span.textContent = item.label;
+        var kind = document.createElement("span"); kind.className = "kind"; kind.textContent = item.kind;
+        li.appendChild(span); li.appendChild(kind);
+        var i = shown.length;
+        li.addEventListener("mousemove", function () { select(i); });
+        li.addEventListener("click", function () { run(item); });
+        list.appendChild(li); shown.push({ item: item, el: li });
+      });
+    });
+    if (!shown.length) {
+      var none = document.createElement("li"); none.textContent = "Nothing matches “" + input.value + "”";
+      none.style.cursor = "default"; list.appendChild(none);
+    }
+    select(0);
+  }
+  function select(i) {
+    if (!shown.length) return;
+    sel = (i + shown.length) % shown.length;
+    shown.forEach(function (s, k) { s.el.classList.toggle("sel", k === sel); });
+    shown[sel].el.scrollIntoView({ block: "nearest" });
+  }
+  function run(item) {
+    if (item.go) { location.href = item.go; return; }
+    if (item.post) {
+      if (item.confirm && !confirm(item.confirm)) return;
+      var f = document.createElement("form"); f.method = "post"; f.action = item.post;
+      document.body.appendChild(f); f.submit();
+    }
+  }
+  function openPalette() { help.hidden = true; overlay.hidden = false; input.value = ""; render(); input.focus(); }
+  function closeAll() { overlay.hidden = true; help.hidden = true; }
+
+  input.addEventListener("input", render);
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowDown") { e.preventDefault(); select(sel + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); select(sel - 1); }
+    else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); run(shown[sel].item); }
+    else if (e.key === "Escape") { closeAll(); }
+  });
+  [overlay, help].forEach(function (o) {
+    o.addEventListener("click", function (e) { if (e.target === o) closeAll(); });
+  });
+  document.querySelectorAll("[data-open-palette]").forEach(function (b) { b.addEventListener("click", openPalette); });
+  document.querySelectorAll("[data-open-help]").forEach(function (b) {
+    b.addEventListener("click", function () { overlay.hidden = true; help.hidden = false; });
+  });
+
+  // Rows that open a company: j/k to move, Enter to open, click anywhere on the row.
+  var rows = Array.prototype.slice.call(document.querySelectorAll("[data-href]"));
+  var rowSel = -1;
+  function selectRow(i) {
+    if (!rows.length) return;
+    rowSel = Math.max(0, Math.min(rows.length - 1, i));
+    rows.forEach(function (r, k) { r.classList.toggle("selected", k === rowSel); });
+    rows[rowSel].scrollIntoView({ block: "nearest" });
+  }
+  rows.forEach(function (r) {
+    r.addEventListener("click", function (e) {
+      if (e.target.closest("a, button, input, select, textarea, form, label")) return;
+      location.href = r.dataset.href;
+    });
+  });
+
+  var pendingG = false, gTimer;
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); overlay.hidden ? openPalette() : closeAll(); return; }
+    if (e.key === "Escape") { closeAll(); return; }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey || !overlay.hidden) return;
+    if (pendingG) {
+      pendingG = false; clearTimeout(gTimer);
+      if (GO[e.key]) { e.preventDefault(); location.href = GO[e.key]; }
+      return;
+    }
+    if (e.key === "g") { pendingG = true; gTimer = setTimeout(function () { pendingG = false; }, 1200); }
+    else if (e.key === "/") { e.preventDefault(); openPalette(); }
+    else if (e.key === "?") { e.preventDefault(); help.hidden = !help.hidden; }
+    else if (e.key === "n") { location.href = "{{ url_for('company_new') }}"; }
+    else if (e.key === "j") { e.preventDefault(); selectRow(rowSel + 1); }
+    else if (e.key === "k") { e.preventDefault(); selectRow(rowSel - 1); }
+    else if (e.key === "Enter" && rowSel >= 0) { location.href = rows[rowSel].dataset.href; }
+  });
+
+  // Theme: follows the system until you pick one, then remembers it.
+  document.querySelectorAll("[data-theme-toggle]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var root = document.documentElement;
+      var dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      root.dataset.theme = dark ? "light" : "dark";
+      try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
+    });
+  });
+
+  // Mobile: slide-in sidebar.
+  var shell = document.getElementById("shell");
+  document.querySelectorAll("[data-toggle-nav]").forEach(function (b) {
+    b.addEventListener("click", function (e) { e.stopPropagation(); shell.classList.toggle("nav-open"); });
+  });
+  document.addEventListener("click", function (e) {
+    if (shell.classList.contains("nav-open") && !e.target.closest("#sidebar")) shell.classList.remove("nav-open");
+  });
+})();
+</script>
 {% endblock %}

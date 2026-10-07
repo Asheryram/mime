@@ -1,53 +1,95 @@
 {% extends "base_app.html" %}
 {% from "_macros.html" import run_status %}
-{% block title %}Overview · Outreach Triage Desk{% endblock %}
-{% block page_title %}Outreach Triage Desk{% endblock %}
-{% block page_sub %}What needs you, what goes out next, and who still owes you a reply.{% endblock %}
+{% block title %}Overview · Outbound{% endblock %}
+{% block page_title %}Overview{% endblock %}
+{% block page_sub %}What needs you, what goes out next, and how the campaign is doing.{% endblock %}
 {% block content %}
-<div class="action-grid">
-  <a class="action-card card-box {{ 'warn' if nav.attention }}" href="{{ url_for('attention') }}">
-    <span class="action-label">Needs you</span>
-    <span class="action-num">{{ nav.attention }}</span>
-    <span class="action-hint">
-      {% if nav.attention %}Unclear names, missing emails or failed sends. Nothing goes out for these until you fix them.
-      {% else %}Nothing to fix. Every lead the scraper found is either clean or already handled.{% endif %}
-    </span>
+<div class="kpis">
+  <a class="kpi card-box {{ 'hot' if nav.attention }}" href="{{ url_for('attention') }}">
+    <span class="kpi-label">{% if nav.attention %}<span class="dot"></span>{% endif %}Needs you</span>
+    <span class="kpi-value">{{ nav.attention }}</span>
+    <span class="kpi-foot">{% if nav.attention %}Held until you fix them{% else %}Nothing stuck{% endif %}</span>
   </a>
-  <a class="action-card card-box" href="{{ url_for('upcoming') }}">
-    <span class="action-label">Going out next</span>
-    <span class="action-num">{{ upcoming_count }}</span>
-    <span class="action-hint">
-      {% if upcoming_count %}{{ batch }} sent {{ next_send|when }} UTC{% if rollover %}; {{ rollover }} wait for the day after (15 a day max){% endif %}.
-      {% else %}Nothing queued. The next scrape is {{ next_scrape|when }} UTC.{% endif %}
-    </span>
+  <a class="kpi card-box" href="{{ url_for('upcoming') }}">
+    <span class="kpi-label">Going out next</span>
+    <span class="kpi-value">{{ upcoming_count }}</span>
+    <span class="kpi-foot">{% if upcoming_count %}{{ batch }} at {{ next_send|when }}{% if rollover %}, {{ rollover }} later{% endif %}{% else %}Queue is empty{% endif %}</span>
   </a>
-  <a class="action-card card-box" href="{{ url_for('sent') }}">
-    <span class="action-label">Awaiting a reply</span>
-    <span class="action-num">{{ nav.sent_open }}</span>
-    <span class="action-hint">Mark a reply or bounce so follow-ups stop chasing them.</span>
+  <a class="kpi card-box" href="{{ url_for('sent') }}">
+    <span class="kpi-label">Awaiting reply</span>
+    <span class="kpi-value">{{ nav.sent_open }}</span>
+    <span class="kpi-foot">One follow-up after 6 days</span>
   </a>
+  <a class="kpi card-box" href="{{ url_for('sent', show='replied') }}">
+    <span class="kpi-label">Reply rate</span>
+    <span class="kpi-value">{% if reply_rate is not none %}{{ reply_rate }}<span class="unit">%</span>{% else %}<span class="faint">n/a</span>{% endif %}</span>
+    <span class="kpi-foot">{{ replied }} of {{ sent_count }} emailed</span>
+  </a>
+</div>
+
+<div class="grid-2-1">
+  <section class="panel card-box">
+    <div class="panel-head">
+      <h2>Emails sent</h2><span class="faint small">last 14 days</span><span class="spacer"></span>
+      <span class="mono">{{ series_total }} total</span>
+    </div>
+    {% set W, H, base, top = 560, 160, 134, 26 %}
+    {% set slot = W / series|length %}
+    <svg class="chart" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="Emails sent per day over the last 14 days, {{ series_total }} in total">
+      <line class="grid" x1="0" x2="{{ W }}" y1="{{ top }}" y2="{{ top }}" stroke-dasharray="2 4"/>
+      <text x="{{ W }}" y="{{ top - 4 }}" text-anchor="end">{{ series_max }}</text>
+      <line class="grid" x1="0" x2="{{ W }}" y1="{{ base }}" y2="{{ base }}"/>
+      {% for p in series %}
+        {% set x = loop.index0 * slot + slot * 0.2 %}
+        {% set bw = slot * 0.6 %}
+        {% set h = (p.count / series_max) * (base - top) %}
+        {% if p.count %}
+          <rect class="bar {{ 'today' if loop.last }}" x="{{ x }}" y="{{ base - h }}" width="{{ bw }}" height="{{ h }}" rx="3"><title>{{ p.label }}: {{ p.count }}</title></rect>
+          <text class="val" x="{{ x + bw / 2 }}" y="{{ base - h - 5 }}" text-anchor="middle">{{ p.count }}</text>
+        {% else %}
+          <rect class="bar zero {{ 'today' if loop.last }}" x="{{ x }}" y="{{ base - 2 }}" width="{{ bw }}" height="2" rx="1"><title>{{ p.label }}: none</title></rect>
+        {% endif %}
+        {% if (series|length - loop.index0) % 2 == 1 %}
+          <text x="{{ x + bw / 2 }}" y="{{ H - 4 }}" text-anchor="middle">{{ 'today' if loop.last else p.label }}</text>
+        {% endif %}
+      {% endfor %}
+    </svg>
+  </section>
+
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Funnel</h2><span class="spacer"></span><a class="small" href="{{ url_for('companies_list') }}">All companies</a></div>
+    {% set first = funnel[0][1] or 1 %}
+    <div class="funnel">
+      {% for label, n in funnel %}
+      <div class="funnel-row">
+        <span>{{ label }}</span><span class="n">{{ n }}</span>
+        <div class="funnel-track"><div class="funnel-fill" style="width: {{ (100 * n / first)|round(1) }}%"></div></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
 </div>
 
 <div class="split">
   <section class="panel card-box">
-    <div class="panel-head"><h2>Pipeline</h2><span class="spacer"></span><a href="{{ url_for('settings') }}" class="small">Run now &rarr;</a></div>
+    <div class="panel-head"><h2>Pipeline</h2><span class="spacer"></span><a class="small" href="{{ url_for('settings') }}">Run now</a></div>
     <div class="pipe">
       <div class="pipe-row">
-        <div><div class="pipe-name">Scrape</div><div class="pipe-sched">Finds new companies and their emails, every 6 hours</div></div>
+        <div><div class="pipe-name">Scrape</div><div class="pipe-sched">Finds companies and their emails, every 6 hours</div></div>
         <div class="pipe-next">next {{ next_scrape|when }}</div>
-        <div class="pipe-last">Last run: {{ run_status(scrape_run, "the pipeline repo") }}</div>
+        <div class="pipe-last">{{ run_status(scrape_run, "the pipeline repo") }}</div>
       </div>
       <div class="pipe-row">
-        <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails everything up next, plus follow-ups, daily at 09:00</div></div>
+        <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails Up next and due follow-ups, daily at 09:00</div></div>
         <div class="pipe-next">next {{ next_send|when }}</div>
-        <div class="pipe-last">Last run: {{ run_status(send_run, "the pipeline repo") }}</div>
+        <div class="pipe-last">{{ run_status(send_run, "the pipeline repo") }}</div>
       </div>
     </div>
-    <p class="muted small" style="margin: 12px 0 0;">Times are UTC, which is Accra time. GitHub can start scheduled runs up to ~15 minutes late.</p>
+    <p class="faint small" style="margin: 14px 0 0;">All times UTC (Accra time). Scheduled runs can start up to ~15 minutes late.</p>
   </section>
 
   <section class="panel card-box">
-    <div class="panel-head"><h2>Recent activity</h2><span class="spacer"></span><a href="{{ url_for('activity') }}" class="small">All activity &rarr;</a></div>
+    <div class="panel-head"><h2>Recent activity</h2><span class="spacer"></span><a class="small" href="{{ url_for('activity') }}">View all</a></div>
     {% if activity %}
     <ul class="feed">
       {% for a in activity %}
@@ -55,19 +97,8 @@
       {% endfor %}
     </ul>
     {% else %}
-    <div class="empty">No history to show yet.</div>
+    <div class="empty">No history yet.</div>
     {% endif %}
   </section>
 </div>
-
-<section class="panel card-box">
-  <div class="panel-head"><h2>Queue by status</h2><span class="spacer"></span><a href="{{ url_for('companies_list') }}" class="small">All companies &rarr;</a></div>
-  <div class="chips" style="margin: 0;">
-    {% for s, n in status_counts %}
-      <a class="chip" href="{{ url_for('companies_list', status=s) }}">{{ s }}<span class="n">{{ n }}</span></a>
-    {% else %}
-      <span class="muted">The queue is empty. Add a company, or wait for the next scrape.</span>
-    {% endfor %}
-  </div>
-</section>
 {% endblock %}

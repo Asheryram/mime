@@ -7,7 +7,7 @@ from email.message import EmailMessage
 from functools import wraps
 
 import requests
-from flask import Flask, request, session, redirect, url_for, render_template, flash, Response
+from flask import Flask, request, session, redirect, url_for, render_template, flash, Response, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -143,7 +143,7 @@ def forgot():
             link = request.url_root.rstrip("/") + url_for("reset_password", token=token)
             send_email(
                 ALLOWED_EMAIL,
-                "Reset your Outreach Triage Desk password",
+                "Reset your Outbound password",
                 f"Reset your password here (expires in 1 hour):\n\n{link}\n\n"
                 f"If you didn't request this, ignore this email.",
             )
@@ -229,7 +229,19 @@ def load_data():
         ),
         "total": len(companies),
     }
+    # The command palette (in every page's shell) searches these client-side.
+    g.palette = [{"n": c["company_name"], "s": c["slug"], "st": c["status"]} for c in companies]
     return companies, nav
+
+
+@app.context_processor
+def shell_context():
+    now = utcnow()
+    return {
+        "palette": getattr(g, "palette", []),
+        "shell_next_send": next_send_run(now),
+        "shell_next_scrape": next_scrape_run(now),
+    }
 
 
 def safe_next(default_endpoint):
@@ -355,26 +367,50 @@ def handle_github_error(e):
 
 # --- Pages ------------------------------------------------------------------------
 
+def sent_series(log, days=14):
+    """First emails successfully sent per day, oldest first, for the overview chart."""
+    per_day = {}
+    for e in log:
+        if e.get("status") == "SUCCESS":
+            day = (e.get("date") or "")[:10]
+            per_day[day] = per_day.get(day, 0) + 1
+    today = utcnow().date()
+    series = []
+    for offset in range(days - 1, -1, -1):
+        d = today - timedelta(days=offset)
+        series.append({"label": f"{d.day} {d.strftime('%b')}", "count": per_day.get(d.isoformat(), 0)})
+    return series
+
+
 @app.route("/")
 @login_required
 def overview():
     companies, nav = load_data()
     now = utcnow()
     upcoming = [c for c in companies if c["bucket"] == "upcoming"]
-    counts = {}
-    for c in companies:
-        counts[c["status"]] = counts.get(c["status"], 0) + 1
-    status_counts = [(s, counts[s]) for s in STATUSES if counts.get(s)]
+    sent_rows = [c for c in companies if c["bucket"] == "sent"]
+    replied = sum(1 for c in sent_rows if is_yes(c["replied"]))
+    funnel = [
+        ("Found by the scraper or added", len(companies)),
+        ("Had a usable email", sum(1 for c in companies if has_email(c))),
+        ("Emailed", len(sent_rows)),
+        ("Replied", replied),
+    ]
+    series = sent_series(safe_call(state_repo.load_log, fallback=[]) or [])
     return render_template(
         "overview.html", active="overview", nav=nav,
         upcoming_count=len(upcoming),
         batch=min(len(upcoming), DAILY_SEND_LIMIT),
         rollover=max(0, len(upcoming) - DAILY_SEND_LIMIT),
+        reply_rate=round(100 * replied / len(sent_rows)) if sent_rows else None,
+        replied=replied, sent_count=len(sent_rows),
+        funnel=funnel, series=series,
+        series_total=sum(p["count"] for p in series),
+        series_max=max([p["count"] for p in series] + [4]),
         next_send=next_send_run(now), next_scrape=next_scrape_run(now),
         scrape_run=safe_call(state_repo.latest_run, SCRAPE_WORKFLOW),
         send_run=safe_call(state_repo.latest_run, SEND_WORKFLOW),
-        activity=safe_call(state_repo.recent_commits, 8, fallback=[]),
-        status_counts=status_counts,
+        activity=safe_call(state_repo.recent_commits, 7, fallback=[]),
     )
 
 

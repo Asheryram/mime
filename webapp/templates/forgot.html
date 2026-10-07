@@ -1,9 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Reset password — Outreach Triage Desk{% endblock %}
+{% from "_macros.html" import icon %}
+{% block title %}Reset password · Outbound{% endblock %}
 {% block body %}
 <div class="auth-wrap">
-  <h1>Outreach Triage Desk</h1>
-  <p class="tagline">We'll email a reset link</p>
+  <a class="brand" href="{{ url_for('login') }}"><span class="brand-mark">{{ icon("mark") }}</span><span class="brand-name">Outbound</span></a>
+  <h1>Reset your password</h1>
+  <p class="tagline">We'll email you a link to choose a new one.</p>
   <div class="card-box" style="margin-top:20px">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}

@@ -1,6 +1,6 @@
 {% extends "base_app.html" %}
 {% from "_macros.html" import company_link %}
-{% block title %}Up next · Outreach Triage Desk{% endblock %}
+{% block title %}Up next · Outbound{% endblock %}
 {% block page_title %}Up next{% endblock %}
 {% block page_sub %}Clean leads go out automatically at the next send, {{ next_send|when }} UTC, in this order, {{ limit }} a day. Hold back anything you don't want sent.{% endblock %}
 {% block content %}
@@ -12,7 +12,7 @@
       <thead><tr><th>#</th><th>Company</th><th>Email</th><th>Website</th><th>Type</th><th>Goes out</th><th></th></tr></thead>
       <tbody>
         {% for c in rows %}
-        <tr>
+        <tr data-href="{{ url_for('company_detail', slug=c.slug) }}">
           <td class="num">{{ loop.index }}</td>
           <td>{{ company_link(c) }}</td>
           <td class="mono">{{ c.email }}</td>
@@ -48,7 +48,7 @@
       <thead><tr><th>Company</th><th>Website</th><th>Added</th></tr></thead>
       <tbody>
         {% for c in scraping %}
-        <tr>
+        <tr data-href="{{ url_for('company_detail', slug=c.slug) }}">
           <td>{{ company_link(c) }}</td>
           <td class="nowrap">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.host }} &nearr;</a>{% else %}<span class="muted">will be looked up</span>{% endif %}</td>
           <td class="muted nowrap">{{ c.date_added }}</td>

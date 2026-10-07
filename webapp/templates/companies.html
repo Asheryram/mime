@@ -1,6 +1,6 @@
 {% extends "base_app.html" %}
 {% from "_macros.html" import company_link %}
-{% block title %}Companies · Outreach Triage Desk{% endblock %}
+{% block title %}Companies · Outbound{% endblock %}
 {% block page_title %}Companies{% endblock %}
 {% block page_sub %}Every company the pipeline knows about. Open one to edit any detail, change its status, or delete it.{% endblock %}
 {% block content %}
@@ -25,7 +25,7 @@
       <thead><tr><th>Company</th><th>Status</th><th>Email</th><th>Website</th><th>Type</th><th>Sent</th></tr></thead>
       <tbody>
         {% for c in rows %}
-        <tr>
+        <tr data-href="{{ url_for('company_detail', slug=c.slug) }}">
           <td>{{ company_link(c) }}
             {% if c.replied == "yes" %} <span class="pill replied">replied</span>{% elif c.bounced == "yes" %} <span class="pill bounced">bounced</span>{% endif %}
           </td>

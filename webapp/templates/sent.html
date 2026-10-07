@@ -1,6 +1,6 @@
 {% extends "base_app.html" %}
 {% from "_macros.html" import company_link %}
-{% block title %}Awaiting reply · Outreach Triage Desk{% endblock %}
+{% block title %}Awaiting reply · Outbound{% endblock %}
 {% block page_title %}Awaiting reply{% endblock %}
 {% block page_sub %}Everything that's been sent. One follow-up goes out automatically 6 days after the first email unless you mark a reply or a bounce here.{% endblock %}
 {% block content %}
@@ -19,7 +19,7 @@
       <tbody>
         {% for c in rows %}
         {% set here = url_for('sent', show=show) %}
-        <tr>
+        <tr data-href="{{ url_for('company_detail', slug=c.slug) }}">
           <td>{{ company_link(c) }}</td>
           <td class="mono">{{ c.email }}</td>
           <td class="nowrap muted">{{ c.date_sent|day }}</td>

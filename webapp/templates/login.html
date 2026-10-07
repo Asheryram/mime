@@ -1,9 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Log in — Outreach Triage Desk{% endblock %}
+{% from "_macros.html" import icon %}
+{% block title %}Log in · Outbound{% endblock %}
 {% block body %}
 <div class="auth-wrap">
-  <h1>Outreach Triage Desk</h1>
-  <p class="tagline">Sign in to continue</p>
+  <a class="brand" href="{{ url_for('login') }}"><span class="brand-mark">{{ icon("mark") }}</span><span class="brand-name">Outbound</span></a>
+  <h1>Sign in</h1>
+  <p class="tagline">Your job outreach pipeline</p>
   <div class="card-box" style="margin-top:20px">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}

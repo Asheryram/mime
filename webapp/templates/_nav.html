@@ -1,9 +1,39 @@
-<nav class="tabs" aria-label="Sections">
-  <a href="{{ url_for('overview') }}" class="tab {{ 'active' if active == 'overview' }}">Overview</a>
-  <a href="{{ url_for('attention') }}" class="tab {{ 'active' if active == 'attention' }} {{ 'alert' if nav.attention }}">Needs you <span class="tab-count">{{ nav.attention }}</span></a>
-  <a href="{{ url_for('upcoming') }}" class="tab {{ 'active' if active == 'upcoming' }}">Up next <span class="tab-count">{{ nav.upcoming }}</span></a>
-  <a href="{{ url_for('sent') }}" class="tab {{ 'active' if active == 'sent' }}">Awaiting reply <span class="tab-count">{{ nav.sent_open }}</span></a>
-  <a href="{{ url_for('companies_list') }}" class="tab {{ 'active' if active == 'companies' }}">Companies <span class="tab-count">{{ nav.total }}</span></a>
-  <a href="{{ url_for('activity') }}" class="tab {{ 'active' if active == 'activity' }}">Activity</a>
-  <a href="{{ url_for('settings') }}" class="tab {{ 'active' if active == 'settings' }}">Settings</a>
-</nav>
+{% from "_macros.html" import icon %}
+<aside class="sidebar" id="sidebar" aria-label="Main navigation">
+  <a class="brand" href="{{ url_for('overview') }}">
+    <span class="brand-mark">{{ icon("mark") }}</span>
+    <span><span class="brand-name">Outbound</span><br><span class="brand-sub">Job outreach pipeline</span></span>
+  </a>
+
+  <button type="button" class="search-btn" data-open-palette>{{ icon("search") }} Search or jump to<kbd>⌘K</kbd></button>
+
+  {% set items = [
+    ("overview", "Overview", "overview", none),
+    ("attention", "Needs you", "attention", nav.attention),
+    ("upcoming", "Up next", "upcoming", nav.upcoming),
+    ("sent", "Awaiting reply", "sent", nav.sent_open),
+  ] %}
+  {% for endpoint, label, ico, count in items %}
+    <a href="{{ url_for(endpoint) }}" class="nav-item {{ 'active' if active == endpoint }}" {{ 'aria-current=page' if active == endpoint }}>
+      {{ icon(ico) }} {{ label }}
+      {% if count is not none %}<span class="nav-count {{ 'hot' if endpoint == 'attention' and count }}">{{ count }}</span>{% endif %}
+    </a>
+  {% endfor %}
+
+  <div class="nav-label">Manage</div>
+  <a href="{{ url_for('companies_list') }}" class="nav-item {{ 'active' if active == 'companies' }}">{{ icon("companies") }} Companies <span class="nav-count">{{ nav.total }}</span></a>
+  <a href="{{ url_for('activity') }}" class="nav-item {{ 'active' if active == 'activity' }}">{{ icon("activity") }} Activity</a>
+  <a href="{{ url_for('settings') }}" class="nav-item {{ 'active' if active == 'settings' }}">{{ icon("settings") }} Settings</a>
+
+  <div class="sidebar-foot">
+    <div class="sched">
+      <span>Next scrape</span><b>{{ shell_next_scrape|when }}</b>
+      <span>Next send</span><b>{{ shell_next_send|when }}</b>
+    </div>
+    <div class="foot-row">
+      <button type="button" class="icon-btn" data-theme-toggle title="Switch light/dark" aria-label="Switch light/dark theme">{{ icon("moon") }}</button>
+      <button type="button" class="icon-btn" data-open-help title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">{{ icon("keyboard") }}</button>
+      <a class="icon-btn" href="{{ url_for('logout') }}" title="Log out" aria-label="Log out" style="margin-left:auto">{{ icon("logout") }}</a>
+    </div>
+  </div>
+</aside>
