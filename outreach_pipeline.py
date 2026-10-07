@@ -3,7 +3,11 @@ import csv
 import sys
 import time
 import random
+import smtplib
+import ssl
 from datetime import datetime
+from email.message import EmailMessage
+from email.utils import formatdate
 from urllib.parse import urlparse
 from config import config
 from exa_search import ExaSearch
@@ -23,7 +27,7 @@ QUEUE_FIELDS = [
     "company_name", "website", "email", "company_type",
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
-    "track", "lead_reviewed", "replied", "bounced"
+    "track", "lead_reviewed", "replied", "bounced", "review_notified"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -451,23 +455,87 @@ def run_apify_scrape():
 
 def run_auto_approve():
     """
-    Promotes "Pending" rows with a usable, scraped email straight to "Approved",
-    but only once a human has flipped "lead_reviewed" to "yes" on the triage
-    dashboard. This is the unattended substitute for the manual review step the
-    README describes ("Pending -> Approved is manual and deliberate"): the CI
-    pipeline runs with nobody watching, so a fresh lead sits reviewable instead
-    of being approved sight unseen. A "Review" row (bad company-name match) is
-    left alone either way, since fixing a wrong name needs a human regardless.
+    Promotes every "Pending" row with a usable, scraped email straight to
+    "Approved" - no human needs to click anything for a clean lead (good
+    company-name match at search time, real email found by the scraper) to
+    go out on the next send run. A "Review" row (bad company-name match) or
+    a "Skipped" row (no email found) is left alone either way, since both
+    need a human to supply the missing piece before there's anything to send.
+    See run_notify_needs_review() for how those get surfaced without anyone
+    having to go looking for them.
+
+    The dashboard's "lead_reviewed" flag is no longer a gate here; it only
+    marks that a human has looked at / edited a row before this step runs.
     """
     queue = load_queue()
     approved = 0
     for r in queue:
-        if (r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found"
-                and r["lead_reviewed"].strip().lower() == "yes"):
+        if r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found":
             r["status"] = "Approved"
             approved += 1
     save_queue(queue)
-    print(f"[Pipeline] Auto-approved {approved} reviewed row(s).")
+    print(f"[Pipeline] Auto-approved {approved} row(s) with a usable email.")
+
+
+def run_notify_needs_review():
+    """
+    Emails the applicant a summary of rows that need a human: a "Review" row
+    (the scraper couldn't trust the company name) or a "Skipped" row with no
+    email found. Each row is only ever included once (tracked via
+    "review_notified"), so a row that sits unresolved for days doesn't nag on
+    every scrape run - fix it (or ignore it) in the dashboard or the CSV.
+    """
+    queue = load_queue()
+    needs_review = [
+        r for r in queue
+        if r.get("review_notified", "").strip().lower() != "yes"
+        and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found"))
+    ]
+
+    if not needs_review:
+        print("[Pipeline] No new rows need review.")
+        return
+
+    lines = []
+    for r in needs_review:
+        reason = "unclear company name" if r["status"] == "Review" else "no email found"
+        lines.append(f"- {r['company_name']} ({r['website']}): {reason}")
+
+    count = len(needs_review)
+    subject = f"{count} compan{'y needs' if count == 1 else 'ies need'} your review in the outreach queue"
+    body = (
+        f"{subject}:\n\n"
+        + "\n".join(lines)
+        + "\n\nFix these in the triage dashboard, or edit outreach_queue.csv directly. "
+        + "They won't be sent until resolved."
+    )
+
+    sender_email = config.get("SENDER_EMAIL")
+    password = (config.get("GMAIL_APP_PASSWORD") or "").replace(" ", "")
+    if not sender_email or not password:
+        print("[Pipeline] Can't send review notification: SENDER_EMAIL or GMAIL_APP_PASSWORD missing.")
+        return
+
+    msg = EmailMessage()
+    msg["From"] = sender_email
+    msg["To"] = applicant.EMAIL
+    msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    msg.set_content(body)
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
+            smtp.login(sender_email, password)
+            smtp.sendmail(sender_email, applicant.EMAIL, msg.as_string())
+    except Exception as e:
+        print(f"[Pipeline] Failed to send review notification: {e}")
+        return
+
+    for r in needs_review:
+        r["review_notified"] = "yes"
+    save_queue(queue)
+    print(f"[Pipeline] Sent review notification for {count} compan{'y' if count == 1 else 'ies'}.")
 
 def letter_filename(company_name):
     """Cover letter PDF filename for a company. Single definition, used everywhere."""
@@ -630,8 +698,9 @@ Commands:
   search    - Search Exa for new tech companies (args: query [limit])
               e.g., py outreach_pipeline.py search "fintech companies in Accra Ghana" 10
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
-  auto-approve - Promote every Pending row with a scraped email to Approved (no human review;
+  auto-approve   - Promote every Pending row with a usable email to Approved (no human review;
               for the scheduled CI pipeline only, not recommended for interactive use)
+  notify-review  - Email a summary of Review/no-email-found rows that need a human, each only once
   generate  - Compile ReportLab cover letter PDFs for companies with emails in the queue
   send      - Send up to {DAILY_SEND_LIMIT} emails marked 'Approved' via SMTP with CV & Letter attachments
   status    - Show queue statistics and counts
@@ -677,6 +746,8 @@ if __name__ == "__main__":
         run_apify_scrape()
     elif cmd == "auto-approve":
         run_auto_approve()
+    elif cmd == "notify-review":
+        run_notify_needs_review()
     elif cmd == "generate":
         run_generate_letters()
     elif cmd == "send":

@@ -99,7 +99,7 @@ Pending ──(you approve, or the dashboard/CI auto-approve)──> Approved �
 
 A row can also be marked `Rejected` from the dashboard, which drops it for good. Three extra columns track manual review state without changing `status`:
 
-*   **`lead_reviewed`**: set to `yes` once a human (or you, via `send`'s companion `auto-approve` command) has looked at a scraped lead. `auto-approve` only promotes `Pending` rows that are also `lead_reviewed=yes`, so a brand-new scraped lead never gets emailed sight-unseen.
+*   **`lead_reviewed`**: set to `yes` from the dashboard to mark that a human has looked at or edited a scraped lead. It doesn't gate anything; `auto-approve` promotes any `Pending` row with a usable email regardless, since a clean scrape (good name match, real email) doesn't need a human to confirm it. `review_notified`: set once an email has gone out flagging a `Review` or missing-email row, so the same unresolved row doesn't nag you on every scrape run.
 *   **`replied`** / **`bounced`**: set to `yes` to stop future follow-ups (`replied`) or future sends (`bounced`) to that row, without editing the hardcoded exclusion lists in `followup_pipeline.py`.
 
 `Pending → Approved` is **manual and deliberate** by default. Nothing is ever emailed until you flip that column yourself, unless you've opted into the fully unattended CI pipeline below.
@@ -148,7 +148,8 @@ Delete the `Example Tech` row before your first real run.
 | :--- | :--- | :--- |
 | **Search** | `py outreach_pipeline.py search "[query]" [limit]` | Find new target companies, e.g. `search "fintech startups in Lagos" 10`. |
 | **Scrape** | `py outreach_pipeline.py scrape` | Resolves missing websites and crawls up to 5 domains per run for contact emails. |
-| **Auto-approve** | `py outreach_pipeline.py auto-approve` | Promotes every `Pending` row with a scraped email **and `lead_reviewed=yes`** to `Approved`. For the scheduled CI pipeline below, paired with the dashboard's review step; not recommended for interactive use. |
+| **Auto-approve** | `py outreach_pipeline.py auto-approve` | Promotes every `Pending` row with a usable, scraped email to `Approved`, no review required. For the scheduled CI pipeline below; not recommended for interactive use. |
+| **Notify-review** | `py outreach_pipeline.py notify-review` | Emails you a summary of `Review` and missing-email rows that need a human, each only once. |
 | **Generate** | `py outreach_pipeline.py generate` | Compiles cover letter PDFs into `generated_letters/` for review. |
 | **Send** | `py outreach_pipeline.py send` | Emails up to 15 companies marked `Approved` and marks them `Sent`. |
 | **Status** | `py outreach_pipeline.py status` | Queue counts by status. |
@@ -180,10 +181,10 @@ Two exclusion lists at the top of `followup_pipeline.py` are worth maintaining a
 
 Two workflows run on independent schedules instead of one combined run, so discovery doesn't wait on the send cadence and vice versa:
 
-*   **`.github/workflows/scrape-pipeline.yml`**, every 6 hours (00:00, 06:00, 12:00, 18:00 UTC): `search` against the queries written into the workflow, then `scrape` to resolve contact emails for whatever's missing one.
+*   **`.github/workflows/scrape-pipeline.yml`**, every 6 hours (00:00, 06:00, 12:00, 18:00 UTC): `search` against the queries written into the workflow, `scrape` to resolve contact emails for whatever's missing one, then `notify-review` to email you about any `Review` or missing-email row you haven't been told about yet.
 *   **`.github/workflows/send-pipeline.yml`**, once a day at 09:00 UTC (9am in Accra, GMT with no DST): `auto-approve`, `generate`, `send`, then `followup_pipeline.py run`.
 
-The one deliberate gap between them: `auto-approve` only promotes a row once `lead_reviewed=yes`, and neither workflow sets that flag on its own, so a freshly scraped company sits in `Pending` until it's reviewed. That review step is what the [Triage Dashboard](#-triage-dashboard-optional-web-app) below is for. Run without the dashboard and new leads simply queue up unsent until you flip `lead_reviewed` by hand in the CSV.
+A clean lead (the scraper trusted the company name and found a real email) needs no human at all: `auto-approve` promotes it straight from `Pending` to `Approved` and the next `send` run emails it. The only rows that wait on a person are the ones the scraper itself couldn't resolve: an unclear company name (`Review`) or no email found (`Skipped`). Those are what the `notify-review` email and the [Triage Dashboard](#-triage-dashboard-optional-web-app) below are for. Run without the dashboard and those two cases simply sit until you fix them by hand in the CSV.
 
 Because this repo is public, the queue, log, and CV cannot live here (see `.gitignore`). They're mirrored instead in a private companion repo (the author's own is `Asheryram/mime-state`), which both workflows pull at the start of their run and push back to at the end via the same SSH deploy key.
 
@@ -194,7 +195,8 @@ Because this repo is public, the queue, log, and CV cannot live here (see `.giti
 | `STATE_REPO` | Variable | both | `your-github-username/your-state-repo` |
 | `STATE_DEPLOY_KEY` | Secret | both | Private half of an SSH deploy key with write access on your companion repo |
 | `EXA_API_KEY`, `APIFY_API_TOKEN` | Secrets | scrape-pipeline | Same values as `.env` |
-| `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `APPLICANT_PHONE`, `APPLICANT_EMAIL` | Secrets | send-pipeline | Same values as `.env` |
+| `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `APPLICANT_EMAIL` | Secrets | both (scrape-pipeline sends the review-needed notification to `APPLICANT_EMAIL`) | Same values as `.env` |
+| `APPLICANT_PHONE` | Secret | send-pipeline | Same value as `.env` |
 
 Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to test before waiting for its schedule. Want a different cadence? Both are plain cron (`cron: "0 */6 * * *"` and `cron: "0 9 * * *"`) in each workflow's `on.schedule`.
 
@@ -230,8 +232,8 @@ This repository works well under an autonomous coding agent (Claude Code, Cursor
 ---
 
 ## ⚠️ Safeguards & Rate Limits
-*   **Manual approval gate:** only rows you set to `Approved` (or review and approve via the dashboard) are ever emailed.
-*   **New-lead review gate:** `auto-approve` requires `lead_reviewed=yes`, so even the fully unattended CI never emails a company nobody has looked at.
+*   **Approval gate:** only rows marked `Approved` are ever emailed, whether that happened by your own hand, the dashboard, or `auto-approve` on a clean scrape.
+*   **Scraper-confidence gate:** a lead only waits for a human if the scraper itself couldn't resolve it (an unclear company name, or no email found). A clean scrape is sent automatically; you're emailed about the rest so nothing silently stalls.
 *   **Spam controls:** a random 30 to 60 second delay between every send.
 *   **Daily caps:** 15 cold emails/day (`DAILY_SEND_LIMIT`), 10 follow-ups/day (`FOLLOWUP_DAILY_LIMIT`).
 *   **Review queue:** inspect every draft in `generated_letters/` before sending.

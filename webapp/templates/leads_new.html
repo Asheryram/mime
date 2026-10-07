@@ -5,7 +5,7 @@
   <header class="topbar">
     <div>
       <h1>New leads to review</h1>
-      <div class="tagline">Scraped with an email found. Approving lets tomorrow's run send to them.</div>
+      <div class="tagline">Scraped with an email found. These get approved and sent automatically on the next run. Check the website, fix anything here, or reject to stop it.</div>
     </div>
     <a href="{{ url_for('logout') }}" class="btn ghost">Log out</a>
   </header>
@@ -24,6 +24,7 @@
         <form method="post" action="{{ url_for('action_approve', slug=c.slug) }}">
           <input type="hidden" name="next" value="leads_new">
           <div class="field grow"><label>Company name</label><input type="text" name="company_name" value="{{ c.company_name }}"></div>
+          <div class="field"><label>Website</label><div class="meta"><a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.website }}</a></div></div>
           <div class="field"><label>Type</label>
             <select name="company_type">{% for t in company_types %}<option value="{{ t }}" {% if t==c.company_type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
           </div>

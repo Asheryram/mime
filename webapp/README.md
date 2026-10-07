@@ -88,7 +88,7 @@ Opens on `http://127.0.0.1:5000`. One known snag: `libsql` (the Turso client) sh
 | Page | Route | What it's for |
 | :--- | :--- | :--- |
 | Overview | `/` | Stat tiles and quick links into each queue below |
-| New leads | `/leads/new` | Approve or reject a freshly scraped company before it's emailed |
+| New leads | `/leads/new` | A clean scrape gets approved and sent automatically; edit or reject one here before that happens |
 | Name fixes | `/leads/name-fix` | Correct a company name the scraper couldn't parse cleanly |
 | Missing email | `/leads/missing-email` | Supply an email by hand when scraping found none |
 | Sent | `/leads/sent` | Flag a reply (stops follow-ups) or a bounce (stops future sends) |
