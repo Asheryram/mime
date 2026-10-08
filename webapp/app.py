@@ -90,8 +90,13 @@ def send_email(to_addr, subject, body):
     msg["Subject"] = subject
     msg.set_content(body)
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-        smtp.login(sender, password)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=20) as smtp:
+        smtp.ehlo()
+        # PLAIN only: smtp.login() tries each mechanism, and after Gmail rejects
+        # a bad password it hangs up, hiding the 535 behind "Connection
+        # unexpectedly closed".
+        smtp.user, smtp.password = sender, password
+        smtp.auth("PLAIN", smtp.auth_plain)
         smtp.sendmail(sender, to_addr, msg.as_string())
 
 
@@ -145,12 +150,20 @@ def forgot():
         if email == ALLOWED_EMAIL and auth.get("password_hash"):
             token = serializer().dumps({"h": auth["password_hash"][:16]})
             link = request.url_root.rstrip("/") + url_for("reset_password", token=token)
-            send_email(
-                ALLOWED_EMAIL,
-                "Reset your Outbound password",
-                f"Reset your password here (expires in 1 hour):\n\n{link}\n\n"
-                f"If you didn't request this, ignore this email.",
-            )
+            try:
+                send_email(
+                    ALLOWED_EMAIL,
+                    "Reset your Outbound password",
+                    f"Reset your password here (expires in 1 hour):\n\n{link}\n\n"
+                    f"If you didn't request this, ignore this email.",
+                )
+            except smtplib.SMTPAuthenticationError:
+                flash("Couldn't send the reset email: Gmail rejected the login. Update GMAIL_APP_PASSWORD "
+                      "in the dashboard's environment with a new app password.", "error")
+                return redirect(url_for("forgot"))
+            except (smtplib.SMTPException, OSError):
+                flash("Couldn't reach Gmail to send the reset email. Try again in a minute.", "error")
+                return redirect(url_for("forgot"))
         flash("If that email has an account, a reset link was just sent.", "success")
         return redirect(url_for("login"))
     return render_template("forgot.html")

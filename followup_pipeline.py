@@ -2,8 +2,6 @@ import os
 import sys
 import time
 import random
-import smtplib
-import ssl
 from email.message import EmailMessage
 from email.utils import make_msgid, formatdate
 from datetime import datetime, timedelta
@@ -11,6 +9,8 @@ from datetime import datetime, timedelta
 from config import config
 from outreach_pipeline import load_queue, save_queue
 import applicant
+import smtp_client
+from smtp_client import GmailAuthError
 
 CV_PATH = applicant.CV_PATH
 
@@ -110,15 +110,14 @@ def send_followup_email(sender_email, password, r, dry_run=False):
         print(f"[DRY-RUN] Would send follow-up to {recipient_email} ({company_name}) - {threading}")
         return True
 
-    context = ssl.create_default_context()
     last_error = None
     for attempt in range(2):  # one retry: a dropped connection is often transient
         try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-                smtp.login(sender_email, password)
-                smtp.sendmail(sender_email, recipient_email, msg.as_string())
+            smtp_client.send(msg, recipient_email)
             print(f"Successfully sent follow-up to {recipient_email}")
             return True
+        except GmailAuthError:
+            raise  # an account problem, not this recipient's; the caller stops the run
         except Exception as e:
             last_error = e
             if attempt == 0:
@@ -148,11 +147,24 @@ def run_followups(limit=FOLLOWUP_DAILY_LIMIT, dry_run=False):
         print(f"Daily cap is {limit}; {len(candidates) - limit} candidates deferred to the next run.")
     print(f"Processing batch of {len(to_send)} follow-ups...")
 
+    if not dry_run:
+        try:
+            smtp, _ = smtp_client.connect()
+            smtp.quit()
+        except GmailAuthError as e:
+            print(f"Aborting before sending any follow-up: {e}")
+            sys.exit(1)
+
     queue = load_queue()
     sent_count = 0
 
     for idx, c in enumerate(to_send):
-        success = send_followup_email(sender_email, password, c, dry_run=dry_run)
+        try:
+            success = send_followup_email(sender_email, password, c, dry_run=dry_run)
+        except GmailAuthError as e:
+            print(f"Stopping: {e}")
+            print(f"Sent {sent_count} follow-ups before the login failed; the rest go out next run.")
+            sys.exit(1)
 
         if success and not dry_run:
             for q_row in queue:

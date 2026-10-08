@@ -1,11 +1,11 @@
-import smtplib
-import ssl
 import os
 import time
 from email.message import EmailMessage
 from email.utils import make_msgid, formatdate
 from config import config
 import applicant
+import smtp_client
+from smtp_client import GmailAuthError
 
 
 class EmailSender:
@@ -65,17 +65,17 @@ class EmailSender:
             print(f"[EmailSender] Error: CV path {cv_path} does not exist.")
             return None
 
-        # Send email
-        context = ssl.create_default_context()
+        # Send email. A login failure (GmailAuthError) is about the account, not
+        # this recipient, so it propagates for the caller to stop the run.
         last_error = None
         for attempt in range(2):  # one retry: a dropped connection is often transient
             try:
-                print(f"[EmailSender] Connecting to SMTP server to email {recipient_email}...")
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-                    smtp.login(self.sender_email, self.password)
-                    smtp.sendmail(self.sender_email, recipient_email, msg.as_string())
+                print(f"[EmailSender] Sending to {recipient_email}...")
+                smtp_client.send(msg, recipient_email)
                 print(f"[EmailSender] Successfully sent email to {recipient_email}")
                 return message_id
+            except GmailAuthError:
+                raise
             except Exception as e:
                 last_error = e
                 if attempt == 0:

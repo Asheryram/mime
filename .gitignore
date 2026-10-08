@@ -18,6 +18,7 @@
 !exa_search.py
 !outreach_pipeline.py
 !followup_pipeline.py
+!smtp_client.py
 
 # Whitelist the scheduled CI workflows (contain no secrets, only references them)
 !.github/

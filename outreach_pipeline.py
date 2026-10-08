@@ -3,8 +3,6 @@ import csv
 import sys
 import time
 import random
-import smtplib
-import ssl
 from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formatdate
@@ -15,6 +13,8 @@ from apify_scraper import ApifyScraper
 from cover_letter_generator import CoverLetterGenerator
 from email_sender import EmailSender
 import applicant
+import smtp_client
+from smtp_client import GmailAuthError
 
 QUEUE_FILE = "outreach_queue.csv"
 LOG_FILE = "outreach_log.csv"
@@ -550,24 +550,19 @@ def run_notify_needs_review():
         + "They won't be sent until resolved."
     )
 
-    sender_email = config.get("SENDER_EMAIL")
-    password = (config.get("GMAIL_APP_PASSWORD") or "").replace(" ", "")
-    if not sender_email or not password:
-        print("[Pipeline] Can't send review notification: SENDER_EMAIL or GMAIL_APP_PASSWORD missing.")
-        return
-
     msg = EmailMessage()
-    msg["From"] = sender_email
+    msg["From"] = config.get("SENDER_EMAIL") or ""
     msg["To"] = applicant.EMAIL
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)
     msg.set_content(body)
 
     try:
-        context = ssl.create_default_context()
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-            smtp.login(sender_email, password)
-            smtp.sendmail(sender_email, applicant.EMAIL, msg.as_string())
+        smtp_client.send(msg, applicant.EMAIL)
+    except GmailAuthError as e:
+        # Rows stay un-notified, so the next scrape run tries again once it's fixed.
+        print(f"[Pipeline] Couldn't send the review notification: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"[Pipeline] Failed to send review notification: {e}")
         return
@@ -632,6 +627,16 @@ def run_send_emails():
         print(f"[Pipeline] Aborting: CV not found at '{CV_PATH}'. Set CV_PATH in applicant.py.")
         return
 
+    # Check the login once before touching any row: a bad app password would
+    # otherwise mark every company in the batch "Failed" for no fault of theirs.
+    try:
+        smtp, _ = smtp_client.connect()
+        smtp.quit()
+    except GmailAuthError as e:
+        print(f"[Pipeline] Aborting before sending anything: {e}")
+        print("[Pipeline] Nothing was marked Failed; these stay Approved and go out once the login works.")
+        sys.exit(1)
+
     sender_service = get_sender()
     sent_count = 0
     failed_count = 0
@@ -655,15 +660,21 @@ def run_send_emails():
             )
 
         # Send. Returns the Message-ID on success so the follow-up can thread.
-        message_id = sender_service.send_outreach_email(
-            recipient_email=r["email"],
-            company_name=r["company_name"],
-            cover_letter_path=pdf_path,
-            cv_path=CV_PATH,
-            role_title=applicant.get_track(r["track"])["role_title"],
-            subject=applicant.subject_for(r["track"]),
-            body=applicant.build_outreach_body(r["company_name"], r["track"])
-        )
+        try:
+            message_id = sender_service.send_outreach_email(
+                recipient_email=r["email"],
+                company_name=r["company_name"],
+                cover_letter_path=pdf_path,
+                cv_path=CV_PATH,
+                role_title=applicant.get_track(r["track"])["role_title"],
+                subject=applicant.subject_for(r["track"]),
+                body=applicant.build_outreach_body(r["company_name"], r["track"])
+            )
+        except GmailAuthError as e:
+            # The login broke mid-run; this row and the rest stay Approved.
+            print(f"[Pipeline] Stopping: {e}")
+            print(f"[Pipeline] Sent {sent_count} before the login failed; the rest stay Approved.")
+            sys.exit(1)
 
         if message_id:
             r["status"] = "Sent"
