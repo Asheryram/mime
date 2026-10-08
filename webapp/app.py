@@ -145,6 +145,12 @@ def logout():
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot():
     if request.method == "POST":
+        # Gmail is only used for this email, so it's optional to configure;
+        # say so plainly rather than crashing on the missing variable.
+        if not os.environ.get("SENDER_EMAIL") or not os.environ.get("GMAIL_APP_PASSWORD"):
+            flash("Password reset isn't set up: add SENDER_EMAIL and GMAIL_APP_PASSWORD to the "
+                  "dashboard's environment variables, then try again.", "error")
+            return redirect(url_for("forgot"))
         email = request.form.get("email", "").strip().lower()
         auth = db.load_auth()
         if email == ALLOWED_EMAIL and auth.get("password_hash"):
