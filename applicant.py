@@ -64,6 +64,10 @@ CV_ATTACHMENT_NAME = f"{FILE_SLUG}_CV.pdf"
 #   closing_skills     Closing line of the default letter.
 #   highlights         list of 2-5 strings, the email's bullet points.
 #   followup_expertise "...how my experience with <this> can support...".
+#   keywords           list of words/phrases that mark a company as a fit for
+#                      this role ("react", "kubernetes"). The scraper tags each
+#                      new company with the role its page matches best (see
+#                      role_match.py). Avoid words every company uses.
 #   letter             The cover letter body: {"intro", "lead_in", "bullets":
 #                      [{"title", "text"}], "closing"}, plain text, with
 #                      {company} and {role} filled in per company. null keeps
@@ -109,6 +113,9 @@ def load_tracks(path=None):
         missing = [k for k in REQUIRED_TRACK_FIELDS if not t.get(k)]
         if missing:
             raise ValueError(f"{path}: track '{key}' is missing {', '.join(missing)}.")
+        kws = t.setdefault("keywords", [])
+        if not isinstance(kws, list) or not all(isinstance(k, str) for k in kws):
+            raise ValueError(f"{path}: track '{key}' keywords must be a list of strings.")
         if not isinstance(t["highlights"], list):
             raise ValueError(f"{path}: track '{key}' highlights must be a list.")
         letter = t.get("letter")

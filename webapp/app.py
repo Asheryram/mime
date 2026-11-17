@@ -646,6 +646,7 @@ def company_new():
                 "email": email,
                 "company_type": form.get("company_type") if form.get("company_type") in COMPANY_TYPES else "general_startup",
                 "track": form.get("track") if form.get("track") in tracks else tracks[0],
+                "role_reason": "set by you",
                 "recipient_name": form.get("recipient_name", "").strip() or DEFAULT_RECIPIENT,
                 "company_address": form.get("company_address", "").strip() or DEFAULT_ADDRESS,
                 "status": "Pending",
@@ -702,6 +703,8 @@ def company_detail(slug):
                 "bounced": "yes" if f.get("bounced") else "",
                 "lead_reviewed": "yes",
             }
+            if changes["track"] != company["track"]:
+                changes["role_reason"] = "set by you"
             state_repo.update_company(slug, changes, f"Edit {name} via dashboard")
         except (ValueError, KeyError) as e:
             flash(str(e) if isinstance(e, ValueError) else "That company isn't in the queue any more.", "error")
@@ -936,6 +939,18 @@ def role_from_form(form, existing=None):
         raise ValueError("Email highlights: write 2 to 5, one per line.")
     role["highlights"] = [_clean(h, "A highlight") for h in highlights]
 
+    raw_kw = re.split(r"[,\n]", form.get("keywords", ""))
+    keywords = []
+    for kw in raw_kw:
+        kw = kw.strip().lower()
+        if kw and kw not in keywords:
+            if len(kw) > 40:
+                raise ValueError(f"Keyword '{kw[:40]}...' is too long (40 characters max).")
+            keywords.append(kw)
+    if len(keywords) > 60:
+        raise ValueError("Keep it to 60 keywords or fewer; the most specific ones do the work.")
+    role["keywords"] = keywords
+
     intro = _clean(form.get("letter_intro"), "Letter intro", required=False)
     lead_in = _clean(form.get("letter_lead_in"), "Letter lead-in", required=False)
     closing = _clean(form.get("letter_closing"), "Letter closing", required=False)
@@ -1082,6 +1097,7 @@ def role_detail(key):
     # Pre-fill the form from the stored role.
     form = {f: role.get(f, "") for f, _, _ in ROLE_TEXT_FIELDS}
     form["highlights"] = "\n".join(role.get("highlights", []))
+    form["keywords"] = ", ".join(role.get("keywords", []))
     L = role.get("letter") or {}
     form.update({"letter_intro": L.get("intro", ""), "letter_lead_in": L.get("lead_in", ""),
                  "letter_closing": L.get("closing", "")})

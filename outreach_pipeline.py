@@ -13,6 +13,7 @@ from apify_scraper import ApifyScraper
 from cover_letter_generator import CoverLetterGenerator
 from email_sender import EmailSender
 import applicant
+import role_match
 import smtp_client
 from smtp_client import GmailAuthError
 
@@ -26,7 +27,8 @@ QUEUE_FIELDS = [
     "company_name", "website", "email", "company_type",
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
-    "track", "lead_reviewed", "replied", "bounced", "review_notified"
+    "track", "lead_reviewed", "replied", "bounced", "review_notified",
+    "role_reason"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -86,7 +88,7 @@ def save_queue(queue):
         for row in queue:
             writer.writerow(row)
 
-def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending", track=None):
+def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending", track=None, role_reason=""):
     queue = load_queue()
     # Deduplicate by company name or website
     for row in queue:
@@ -107,7 +109,8 @@ def add_to_queue(company_name, website, email="", company_type="general_startup"
         "date_sent": "",
         "date_followup": "",
         "message_id": "",
-        "track": (track or applicant.DEFAULT_TRACK).strip().lower()
+        "track": (track or applicant.DEFAULT_TRACK).strip().lower(),
+        "role_reason": role_reason,
     }
     queue.append(new_row)
     save_queue(queue)
@@ -363,6 +366,16 @@ def run_exa_search(query_str, limit=15, track=None):
         elif "bank" in txt or "fidelity" in txt or "ecobank" in txt:
             ctype = "bank"
             
+        # The role comes from what the company's page says it does; the
+        # search's own role (or the default) is only the fallback.
+        role, role_reason = role_match.pick_role(
+            c["text"], applicant.TRACKS,
+            fallback=(track or applicant.DEFAULT_TRACK).strip().lower(),
+            fallback_source="this search's role" if track else "the default role",
+        )
+        if role != (track or applicant.DEFAULT_TRACK):
+            print(f"[Pipeline] {name}: role '{role}' ({role_reason}).")
+
         success = add_to_queue(
             company_name=name,
             website=c["domain"],
@@ -371,7 +384,8 @@ def run_exa_search(query_str, limit=15, track=None):
             recipient="The Recruiting and Technology Team",
             address="Accra, Ghana",
             status="Review" if review else "Pending",
-            track=track
+            track=role,
+            role_reason=role_reason,
         )
         if success:
             added_count += 1
