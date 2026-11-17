@@ -112,4 +112,20 @@
     </div>
   </form>
 </section>
+
+{% if key and other_roles %}
+<section class="panel card-box" id="remove" style="max-width: 900px;">
+  <div class="panel-head"><h2>Remove this role</h2></div>
+  <p class="hint">Every company tagged <span class="mono">{{ key }}</span> moves to the role you pick, including ones already emailed: their follow-up then uses that role's pitch and CV. Searches tagged <span class="mono">| {{ key }}</span> move too. Its CV file stays in your state repo.</p>
+  <form method="post" action="{{ url_for('role_delete', key=key) }}"
+        onsubmit="return confirm('Remove the {{ key }} role and move its companies to ' + this.move_to.value + '? This can\'t be undone from here.');">
+    <div class="form-grid">
+      <div><label for="move_to">Move its companies to</label>
+        <select id="move_to" name="move_to">{% for k in other_roles %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></div>
+      <div style="padding-top: 22px;"><label class="check"><input type="checkbox" name="merge_keywords" checked> Add its keywords to that role</label></div>
+    </div>
+    <div class="form-actions"><button type="submit" class="danger">Remove {{ key }}</button></div>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

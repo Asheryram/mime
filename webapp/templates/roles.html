@@ -3,6 +3,18 @@
 {% block page_title %}Roles{% endblock %}
 {% block page_sub %}Each role is one pitch with its own CV, letterhead title, email and cover letter. A company is tagged with one role, and gets that role's CV.{% endblock %}
 {% block content %}
+{% for from_key, n in orphans %}
+<section class="panel card-box" style="border-color: var(--accent);">
+  <div class="panel-head"><h2>{{ n }} compan{{ 'y is' if n == 1 else 'ies are' }} tagged with <span class="mono">{{ from_key }}</span>, which no longer exists</h2></div>
+  <p class="hint">They won't be sent until they have a role. Any waiting to be sent are in Needs you. Move them all at once:</p>
+  <form method="post" action="{{ url_for('roles_move_orphans') }}" class="row-actions">
+    <input type="hidden" name="from" value="{{ from_key }}">
+    <select name="move_to" aria-label="Move to role" style="width:auto; margin:0">{% for k in keys %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+    <button type="submit" class="sm">Move them</button>
+  </form>
+</section>
+{% endfor %}
+
 <section class="panel card-box">
   <div class="panel-head"><h2>Your roles</h2><span class="count-badge">{{ rows|length }}</span>
     <a href="{{ url_for('role_new') }}" class="btn sm" style="margin-left:auto">Add a role</a></div>
