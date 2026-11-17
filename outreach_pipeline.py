@@ -522,6 +522,12 @@ def run_apify_scrape():
     save_queue(queue)
     print(f"[Pipeline] Scraping complete. Updated {updated_count} companies with email addresses.")
 
+def needs_role_choice(r):
+    """No role clearly fit when scraped, or its role has since been removed."""
+    return (r.get("role_review", "").strip().lower() == "yes"
+            or (r.get("track") or applicant.DEFAULT_TRACK) not in applicant.TRACKS)
+
+
 def run_auto_approve():
     """
     Promotes every "Pending" row with a usable, scraped email straight to
@@ -540,7 +546,7 @@ def run_auto_approve():
     approved = 0
     for r in queue:
         if (r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found"
-                and r.get("role_review", "").strip().lower() != "yes"):
+                and not needs_role_choice(r)):
             r["status"] = "Approved"
             approved += 1
     save_queue(queue)
@@ -560,7 +566,7 @@ def run_notify_needs_review():
         r for r in queue
         if r.get("review_notified", "").strip().lower() != "yes"
         and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found")
-             or (r["status"] in ("Pending", "Approved") and r.get("role_review", "").strip().lower() == "yes"))
+             or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
     ]
 
     if not needs_review:
@@ -573,6 +579,8 @@ def run_notify_needs_review():
             reason = "unclear company name"
         elif r["status"] == "Skipped":
             reason = "no email found"
+        elif r.get("track") and r["track"] not in applicant.TRACKS:
+            reason = f"choose a role (its role '{r['track']}' was removed)"
         else:
             reason = f"choose a role ({r.get('role_reason') or 'no clear fit'})"
         lines.append(f"- {r['company_name']} ({r['website']}): {reason}")

@@ -63,6 +63,15 @@ def write_file(path, data):
         f.write(data)
 
 
+def add_ops_role(applicant):
+    """A third role with its own CV, for tests that need more than the two built-ins."""
+    tracks = json.loads(json.dumps(applicant.TRACKS))
+    tracks["sysadmin"] = dict(tracks["devops"], cv_path="cv_sysadmin.pdf",
+                              subject_area="IT and Systems Administration")
+    with open("tracks.json", "w") as f:
+        json.dump(tracks, f)
+
+
 def write_queue(op, rows):
     with open(op.QUEUE_FILE, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=op.QUEUE_FIELDS)
@@ -76,7 +85,7 @@ def write_queue(op, rows):
 class TracksFileTests(InTempDir):
     def test_defaults_used_without_tracks_json(self):
         applicant, _, _ = self.reload_pipeline()
-        self.assertEqual(set(applicant.TRACKS), {"devops", "software", "sysadmin"})
+        self.assertEqual(set(applicant.TRACKS), {"devops", "software"})
         self.assertEqual(applicant.DEFAULT_TRACK, "devops")
 
     def test_tracks_json_overrides_defaults(self):
@@ -118,6 +127,8 @@ class TracksFileTests(InTempDir):
 
 class SendTests(InTempDir):
     def test_each_role_gets_its_own_cv_and_missing_cv_is_held(self):
+        applicant, _, _ = self.reload_pipeline()
+        add_ops_role(applicant)
         applicant, op, _ = self.reload_pipeline()
         import smtp_client
         fake = FakeSMTP(); fake.install(smtp_client)
@@ -165,6 +176,8 @@ class SendTests(InTempDir):
         self.assertEqual([to for to, _ in fake.sent], ["d0@x.co", "d1@x.co"])
 
     def test_followup_reattaches_same_role_cv_and_holds_missing(self):
+        applicant, _, _ = self.reload_pipeline()
+        add_ops_role(applicant)
         applicant, op, fp = self.reload_pipeline()
         import smtp_client
         fake = FakeSMTP(); fake.install(smtp_client)
@@ -253,7 +266,7 @@ class DashboardTests(unittest.TestCase):
         r = self.c.post("/roles/new", data=self.role_form())
         self.assertEqual(r.status_code, 302)
         t = self.tracks()
-        self.assertEqual(set(t), {"devops", "software", "sysadmin", "fullstack"}, "defaults copied on first save")
+        self.assertEqual(set(t), {"devops", "software", "fullstack"}, "defaults copied on first save")
         self.assertFalse(t["fullstack"]["active"])
         self.assertEqual(t["fullstack"]["cv_path"], "cv_fullstack.pdf")
         self.assertEqual(t["fullstack"]["highlights"], ["Built X with Y", "Shipped Z"])

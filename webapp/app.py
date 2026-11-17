@@ -213,12 +213,24 @@ def has_email(c):
     return bool(c.get("email")) and c["email"] != "no_email_found"
 
 
+def current_tracks():
+    """(tracks, saved), read once per request: every page needs it for the buckets."""
+    if "tracks" not in g:
+        g.tracks = state_repo.get_tracks()
+    return g.tracks
+
+
+def role_missing(c):
+    """The row's role was removed (or never existed), so it can't be sent as-is."""
+    return bool(c.get("track")) and c["track"] not in current_tracks()[0]
+
+
 def bucket_of(c):
     """Which page a row belongs on, in terms of what (if anything) it needs from you."""
     s = c["status"]
     if s in ("Review", "Failed") or (s == "Skipped" and not has_email(c)):
         return "attention"
-    if s in ("Pending", "Approved") and is_yes(c.get("role_review")):
+    if s in ("Pending", "Approved") and (is_yes(c.get("role_review")) or role_missing(c)):
         return "attention"
     if s in ("Pending", "Approved") and has_email(c):
         return "upcoming"
@@ -322,9 +334,10 @@ def triage_item(c, tracks=()):
         "email": current,
         "reason": reason,
         "type": c["company_type"],
-        "track": c["track"] or (tracks[0] if tracks else ""),
+        "track": c["track"] if c["track"] in tracks else (tracks[0] if tracks else ""),
         "tracks": list(tracks),
-        "role_reason": c.get("role_reason", ""),
+        "role_reason": (f"its role '{c['track']}' was removed" if role_missing(c)
+                        else c.get("role_reason", "")),
         "added": c["date_added"],
         "name_suggestion": guess if guess and guess.lower() != c["company_name"].strip().lower() else "",
         "email_suggestions": [e for e in (f"{p}@{domain}" for p in ("careers", "hr", "jobs", "info")) if e != current] if domain else [],
@@ -564,7 +577,7 @@ def upcoming():
     scraping = [c for c in companies if c["bucket"] == "scraping"]
     # Mirror run_send_emails: rows on a switched-off role, or one with no CV,
     # are held and skipped before the daily cap, so they don't take a slot.
-    tracks, _ = state_repo.get_tracks()
+    tracks, _ = current_tracks()
     hold = {}
     for key in {c["track"] or "devops" for c in rows}:
         t = tracks.get(key)
@@ -934,7 +947,7 @@ LETTER_BULLETS = 3
 
 
 def track_keys():
-    tracks, _ = state_repo.get_tracks()
+    tracks, _ = current_tracks()
     return list(tracks)
 
 
@@ -1033,7 +1046,7 @@ def role_preview(role, company="Acme Ltd"):
 
 
 def _load_role(key):
-    tracks, saved = state_repo.get_tracks()
+    tracks, saved = current_tracks()
     return tracks.get(key), tracks, saved
 
 
@@ -1041,7 +1054,7 @@ def _load_role(key):
 @login_required
 def roles():
     companies, nav = load_data()
-    tracks, saved = state_repo.get_tracks()
+    tracks, saved = current_tracks()
     rows = []
     for key, t in tracks.items():
         size = safe_call(state_repo.cv_size, t["cv_path"])
@@ -1053,7 +1066,12 @@ def roles():
             "queued": queued, "sent": sent_n,
             "live": bool(t.get("active", True)) and size is not None,
         })
-    return render_template("roles.html", active="roles", nav=nav, rows=rows, saved=saved)
+    orphans = {}
+    for c in companies:
+        if role_missing(c):
+            orphans[c["track"]] = orphans.get(c["track"], 0) + 1
+    return render_template("roles.html", active="roles", nav=nav, rows=rows, saved=saved,
+                           orphans=sorted(orphans.items()), keys=list(tracks))
 
 
 @app.route("/roles/new", methods=["GET", "POST"])
@@ -1128,6 +1146,7 @@ def role_detail(key):
         text_fields=ROLE_TEXT_FIELDS, n_bullets=LETTER_BULLETS,
         has_cv=size is not None, cv_kb=max(0.1, round(size / 1024, 1)) if size is not None else None,
         preview=role_preview(role),
+        other_roles=[k for k in current_tracks()[0] if k != key],
         queued=sum(1 for c in companies if c["bucket"] == "upcoming" and (c["track"] or "devops") == key),
     )
 
@@ -1149,6 +1168,93 @@ def role_active(key):
     state_repo.mutate_tracks(toggle, f"Turn role '{key}' {'on' if turn_on else 'off'} via dashboard")
     flash(f"'{key}' is {'on: its queued companies go out with the next send' if turn_on else 'off: its companies wait in the queue'}.", "success")
     return redirect(url_for("role_detail", key=key))
+
+
+def _move_companies(from_key, to_key, message):
+    """Retag every row on from_key (any status) to to_key. Returns (moved, of_which_sent)."""
+    def fn(rows):
+        moved = sent = 0
+        for r in rows:
+            if r["track"] == from_key:
+                r["track"] = to_key
+                r["role_reason"] = f"moved from {from_key}"
+                moved += 1
+                sent += r["status"] in ("Sent", "Followup-Sent")
+        return moved, sent
+    return state_repo.mutate_queue(fn, message)
+
+
+def _retag_queries(from_key, to_key):
+    """Point any search tagged '| from_key' at to_key instead. Returns lines changed."""
+    text = state_repo.get_queries_text()
+    if text is None:
+        return 0
+    changed, out = 0, []
+    for line in text.splitlines():
+        parts = line.split("|")
+        if not line.strip().startswith("#") and len(parts) == 3 and parts[2].strip().lower() == from_key:
+            parts[2] = f" {to_key}"
+            line = "|".join(parts)
+            changed += 1
+        out.append(line)
+    if changed:
+        state_repo.save_queries_text("\n".join(out) + "\n", f"Retag searches from {from_key} to {to_key}")
+    return changed
+
+
+@app.route("/roles/<key>/delete", methods=["POST"])
+@login_required
+def role_delete(key):
+    tracks, _ = current_tracks()
+    to_key = request.form.get("move_to", "")
+    if key not in tracks:
+        flash("No role by that name.", "error")
+        return redirect(url_for("roles"))
+    if len(tracks) < 2:
+        flash("You can't remove your only role.", "error")
+        return redirect(url_for("role_detail", key=key))
+    if to_key not in tracks or to_key == key:
+        flash("Pick another role to move this role's companies to.", "error")
+        return redirect(url_for("role_detail", key=key) + "#remove")
+
+    # Companies and searches first: if this stops halfway, the role still
+    # exists and nothing is orphaned; retrying finishes the job.
+    moved, sent = _move_companies(key, to_key, f"Move companies from role '{key}' to '{to_key}'")
+    queries = _retag_queries(key, to_key)
+    merge_kw = request.form.get("merge_keywords") == "on"
+
+    def remove(ts):
+        if key in ts:
+            if merge_kw and to_key in ts:
+                kws = ts[to_key].setdefault("keywords", [])
+                kws.extend(k for k in ts[key].get("keywords", []) if k not in kws)
+            del ts[key]
+    state_repo.mutate_tracks(remove, f"Remove role '{key}' via dashboard")
+
+    parts = [f"Removed '{key}'. Moved {moved} compan{'y' if moved == 1 else 'ies'} to '{to_key}'"]
+    if sent:
+        parts.append(f"({sent} already emailed; their follow-up now uses the {to_key} pitch and CV)")
+    if queries:
+        parts.append(f"and {queries} search{'es' if queries != 1 else ''}")
+    if merge_kw:
+        parts.append(f"and added its keywords to '{to_key}'")
+    flash(" ".join(parts) + ".", "success")
+    return redirect(url_for("role_detail", key=to_key))
+
+
+@app.route("/roles/move-orphans", methods=["POST"])
+@login_required
+def roles_move_orphans():
+    tracks, _ = current_tracks()
+    from_key, to_key = request.form.get("from", ""), request.form.get("move_to", "")
+    if from_key in tracks or to_key not in tracks:
+        flash("Pick one of your roles to move them to.", "error")
+        return redirect(url_for("roles"))
+    moved, _ = _move_companies(from_key, to_key, f"Move companies from removed role '{from_key}' to '{to_key}'")
+    queries = _retag_queries(from_key, to_key)
+    extra = f" and {queries} search{'es' if queries != 1 else ''}" if queries else ""
+    flash(f"Moved {moved} compan{'y' if moved == 1 else 'ies'}{extra} from '{from_key}' to '{to_key}'.", "success")
+    return redirect(url_for("roles"))
 
 
 @app.route("/roles/<key>/cv", methods=["POST"])

@@ -41,10 +41,11 @@ class PickRoleTests(unittest.TestCase):
         return role, reason
 
     def test_company_gets_the_role_its_site_describes(self):
-        cases = [(FINTECH, "software"), (CLOUD_CONSULTANCY, "devops"), (IT_SERVICES, "sysadmin")]
+        # IT services firms now get the DevOps pitch: sysadmin was merged into it.
+        cases = [(FINTECH, "software"), (CLOUD_CONSULTANCY, "devops"), (IT_SERVICES, "devops")]
         for text, expected in cases:
-            with self.subTest(expected=expected):
-                role, reason = self.pick(text, fallback="sysadmin" if expected != "sysadmin" else "devops")
+            with self.subTest(text=text[:20]):
+                role, reason = self.pick(text, fallback="guess")
                 self.assertEqual(role, expected, reason)
                 self.assertTrue(self.last_clear)
                 self.assertTrue(reason.startswith("site mentions"), reason)
@@ -62,8 +63,8 @@ class PickRoleTests(unittest.TestCase):
         self.assertIn("weak signal", reason)
 
     def test_tie_falls_back(self):
-        role, reason = self.pick("We use React, TypeScript, Kubernetes and Terraform.", fallback="sysadmin")
-        self.assertEqual(role, "sysadmin")
+        role, reason = self.pick("We use React, TypeScript, Kubernetes and Terraform.", fallback="guess")
+        self.assertEqual(role, "guess")
         self.assertFalse(self.last_clear)
         self.assertIn("equally", reason)
 

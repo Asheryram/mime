@@ -30,13 +30,15 @@ Three phases, each runnable independently:
 
 A **role** (called a *track* in the code) is one complete pitch: its own CV, letterhead title, cold email, cover letter and follow-up. Each company in the queue is tagged with one role, and gets that role's CV and letter, so one campaign can approach a fintech about DevOps work and a SaaS startup about full-stack work without either letter, or CV, reading generic.
 
-The built-in roles are `devops`, `software` (full-stack) and `sysadmin`. Nothing about the pipeline is specific to software jobs: a nurse or accountant replaces these with their own.
+The built-in roles are `devops` (cloud, DevOps, and the systems/network administration side) and `software` (full-stack). Nothing about the pipeline is specific to software jobs: a nurse or accountant replaces these with their own.
 
 ### Managing roles
 
 **On the dashboard (recommended):** the **Roles** page lists each role with its CV and status. *Add a role* opens a form for the pitch (role title, letterhead title, email highlights, cover letter intro / bullets / closing) and a CV upload, with a preview of the exact email a company would receive.
 
 **By hand:** roles live in `tracks.json` in your companion repo, which the dashboard edits and CI copies in before each run. Until it exists, the pipeline uses the shipped defaults in `webapp/tracks_default.json`. The field reference is at the top of the tracks section in `applicant.py`. In letter text, `{company}` and `{role}` are filled in per company.
+
+**Removing a role:** on its page, *Remove this role* moves every company tagged with it (and any search tagged `| role`) to the role you pick, and can add its keywords to that role. Companies left on a role that no longer exists (e.g. after editing `tracks.json` by hand) are never sent: they wait in Needs you, and the Roles page offers to move them all at once.
 
 ### Guardrails
 
