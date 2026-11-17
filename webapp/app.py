@@ -218,6 +218,8 @@ def bucket_of(c):
     s = c["status"]
     if s in ("Review", "Failed") or (s == "Skipped" and not has_email(c)):
         return "attention"
+    if s in ("Pending", "Approved") and is_yes(c.get("role_review")):
+        return "attention"
     if s in ("Pending", "Approved") and has_email(c):
         return "upcoming"
     if s == "Pending":
@@ -234,7 +236,9 @@ def attention_reason(c):
         return "name"
     if c["status"] == "Failed":
         return "failed"
-    return "email"
+    if c["status"] == "Skipped":
+        return "email"
+    return "role"
 
 
 def load_data():
@@ -303,7 +307,7 @@ def name_from_host(host):
     return " ".join(w if any(ch.isdigit() for ch in w) else w.capitalize() for w in words)
 
 
-def triage_item(c):
+def triage_item(c, tracks=()):
     """Everything the Needs you page shows for one row, including suggested fixes."""
     reason = attention_reason(c)
     host = c["host"]
@@ -318,6 +322,9 @@ def triage_item(c):
         "email": current,
         "reason": reason,
         "type": c["company_type"],
+        "track": c["track"] or (tracks[0] if tracks else ""),
+        "tracks": list(tracks),
+        "role_reason": c.get("role_reason", ""),
         "added": c["date_added"],
         "name_suggestion": guess if guess and guess.lower() != c["company_name"].strip().lower() else "",
         "email_suggestions": [e for e in (f"{p}@{domain}" for p in ("careers", "hr", "jobs", "info")) if e != current] if domain else [],
@@ -506,9 +513,10 @@ def overview():
 @login_required
 def attention():
     companies, nav = load_data()
-    order = {"email": 0, "name": 1, "failed": 2}
+    order = {"role": 0, "email": 1, "name": 2, "failed": 3}
+    tracks = track_keys()
     items = sorted(
-        (triage_item(c) for c in companies if c["bucket"] == "attention"),
+        (triage_item(c, tracks) for c in companies if c["bucket"] == "attention"),
         key=lambda i: (order[i["reason"]], i["name"].lower()),
     )
     return render_template("attention.html", active="attention", nav=nav, items=items)
@@ -703,8 +711,10 @@ def company_detail(slug):
                 "bounced": "yes" if f.get("bounced") else "",
                 "lead_reviewed": "yes",
             }
-            if changes["track"] != company["track"]:
+            if changes["track"] != company["track"] or is_yes(company.get("role_review")):
+                # Saving the page with a role chosen is your decision.
                 changes["role_reason"] = "set by you"
+            changes["role_review"] = ""
             state_repo.update_company(slug, changes, f"Edit {name} via dashboard")
         except (ValueError, KeyError) as e:
             flash(str(e) if isinstance(e, ValueError) else "That company isn't in the queue any more.", "error")
@@ -740,6 +750,16 @@ def company_resolve(slug):
     try:
         email = clean_email(request.form.get("email"))
         changes = {"lead_reviewed": "yes"}
+        if reason == "role":
+            track = request.form.get("track", "")
+            if track not in track_keys():
+                raise ValueError("Pick one of your roles.")
+            row = state_repo.update_company(
+                slug, {"track": track, "role_review": "", "role_reason": "set by you", "lead_reviewed": "yes"},
+                f"Set role of {slug} to {track} via dashboard")
+            if has_email(row):
+                return respond(True, f"{row['company_name']} will be pitched as {track} at the next send.", "attention")
+            return respond(True, f"{row['company_name']} set to {track}. The next scrape will look for its email.", "attention")
         if reason == "name":
             if not name:
                 raise ValueError("Enter the company's real name.")

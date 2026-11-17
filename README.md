@@ -50,9 +50,9 @@ The built-in roles are `devops`, `software` (full-stack) and `sysadmin`. Nothing
 
 The scraper reads each company's page and gives it the role whose **keywords** it mentions most (`role_match.py`). Each role's keywords are editable on its dashboard page, e.g. `react, node.js, saas` for full-stack or `kubernetes, terraform, aws` for DevOps. A role wins only with a clear lead: at least 2 different keywords, and more than any other role. One word repeated many times doesn't count, and partial words don't match (`laws` is not `aws`).
 
-Otherwise the company gets the role of the search that found it. Each line of `search_queries.txt` (dashboard &rarr; Settings) can name one as a third part: `SaaS startups in Accra | 10 | software`. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
+**Otherwise you decide.** The company waits in **Needs you** under *Choose a role*, with the search's role (or the default) pre-selected as a best guess and the reason it's unsure. It is never auto-approved or sent until you pick one (on Needs you, or by saving its page), and the review email lists it. Searches can still carry a role as that best guess. Each line of `search_queries.txt` (dashboard &rarr; Settings) can name one as a third part: `SaaS startups in Accra | 10 | software`. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
 
-Every company records why it got its role (`role_reason`, e.g. *site mentions react, typescript* or *no clear signal on site; used this search's role*). This shows on its page and on Up next, where you can change it before the send; your change is recorded as *set by you*. Companies already in the queue keep their current role.
+Every company records why it got its role (`role_reason`, e.g. *site mentions react, typescript*, or *no clear signal on site; pre-selected this search's role* for one waiting on you). This shows on its page and on Up next, where you can change it before the send; your change is recorded as *set by you*. Companies already in the queue keep their current role.
 
 ### The DevOps sector letters
 

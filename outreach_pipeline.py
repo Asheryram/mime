@@ -28,7 +28,7 @@ QUEUE_FIELDS = [
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
-    "role_reason"
+    "role_reason", "role_review"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -88,7 +88,7 @@ def save_queue(queue):
         for row in queue:
             writer.writerow(row)
 
-def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending", track=None, role_reason=""):
+def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending", track=None, role_reason="", role_review=""):
     queue = load_queue()
     # Deduplicate by company name or website
     for row in queue:
@@ -111,6 +111,8 @@ def add_to_queue(company_name, website, email="", company_type="general_startup"
         "message_id": "",
         "track": (track or applicant.DEFAULT_TRACK).strip().lower(),
         "role_reason": role_reason,
+        # "yes" = no role clearly fit; waits in Needs you until a human picks.
+        "role_review": role_review,
     }
     queue.append(new_row)
     save_queue(queue)
@@ -368,13 +370,15 @@ def run_exa_search(query_str, limit=15, track=None):
             
         # The role comes from what the company's page says it does; the
         # search's own role (or the default) is only the fallback.
-        role, role_reason = role_match.pick_role(
+        # The role comes from what the company's page says it does. With no
+        # clear winner, the search's role (or the default) is only a guess,
+        # and the row waits for you to choose before it can be sent.
+        role, role_reason, clear = role_match.pick_role(
             c["text"], applicant.TRACKS,
             fallback=(track or applicant.DEFAULT_TRACK).strip().lower(),
             fallback_source="this search's role" if track else "the default role",
         )
-        if role != (track or applicant.DEFAULT_TRACK):
-            print(f"[Pipeline] {name}: role '{role}' ({role_reason}).")
+        print(f"[Pipeline] {name}: {'role ' + repr(role) if clear else 'role needs you'} ({role_reason}).")
 
         success = add_to_queue(
             company_name=name,
@@ -386,6 +390,7 @@ def run_exa_search(query_str, limit=15, track=None):
             status="Review" if review else "Pending",
             track=role,
             role_reason=role_reason,
+            role_review="" if clear else "yes",
         )
         if success:
             added_count += 1
@@ -534,7 +539,8 @@ def run_auto_approve():
     queue = load_queue()
     approved = 0
     for r in queue:
-        if r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found":
+        if (r["status"] == "Pending" and r["email"] and r["email"] != "no_email_found"
+                and r.get("role_review", "").strip().lower() != "yes"):
             r["status"] = "Approved"
             approved += 1
     save_queue(queue)
@@ -553,7 +559,8 @@ def run_notify_needs_review():
     needs_review = [
         r for r in queue
         if r.get("review_notified", "").strip().lower() != "yes"
-        and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found"))
+        and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found")
+             or (r["status"] in ("Pending", "Approved") and r.get("role_review", "").strip().lower() == "yes"))
     ]
 
     if not needs_review:
@@ -562,7 +569,12 @@ def run_notify_needs_review():
 
     lines = []
     for r in needs_review:
-        reason = "unclear company name" if r["status"] == "Review" else "no email found"
+        if r["status"] == "Review":
+            reason = "unclear company name"
+        elif r["status"] == "Skipped":
+            reason = "no email found"
+        else:
+            reason = f"choose a role ({r.get('role_reason') or 'no clear fit'})"
         lines.append(f"- {r['company_name']} ({r['website']}): {reason}")
 
     count = len(needs_review)
@@ -649,7 +661,10 @@ def run_send_emails():
     # never eat into the day's sends.
     sendable, held = [], {}
     for r in approved:
-        reason = applicant.track_hold_reason(r["track"])
+        if r.get("role_review", "").strip().lower() == "yes":
+            reason = "role not chosen yet (pick one in Needs you)"
+        else:
+            reason = applicant.track_hold_reason(r["track"])
         if reason:
             held.setdefault(reason, []).append(r["company_name"])
         else:

@@ -6,9 +6,9 @@ Each role lists keywords in tracks.json (editable on the dashboard's Roles
 page). A company gets the role whose keywords its page mentions most, counted
 as *distinct* keywords so one word repeated fifty times can't win on its own.
 A role only wins with a clear lead: at least MIN_MATCHES distinct keywords and
-strictly more than any other role. Anything weaker falls back to the role the
-search was tagged with (or the default role), and the reason says so, so a
-guess is never presented as a finding.
+strictly more than any other role. Anything weaker is not decided here: the
+search's role (or the default) is pre-selected as a guess, and the company is
+flagged for you to choose on the dashboard before anything is sent.
 """
 import re
 
@@ -35,8 +35,9 @@ def score(text, tracks):
 
 def pick_role(text, tracks, fallback, fallback_source="the search's role"):
     """
-    Returns (role, reason). `fallback` is used unless one role clearly leads.
-    `reason` is a short human-readable line shown on the dashboard.
+    Returns (role, reason, clear). When `clear` is False no role clearly led:
+    `role` is only the pre-selected guess (`fallback`) and the caller must have
+    a human confirm it. `reason` is a short line shown on the dashboard.
     """
     hits = score(text, tracks)
     ranked = sorted(hits.items(), key=lambda kv: len(kv[1]), reverse=True)
@@ -46,8 +47,11 @@ def pick_role(text, tracks, fallback, fallback_source="the search's role"):
         if len(found) >= MIN_MATCHES and len(found) > runner_up:
             listed = ", ".join(found[:MAX_LISTED])
             more = f" +{len(found) - MAX_LISTED} more" if len(found) > MAX_LISTED else ""
-            return best, f"site mentions {listed}{more}"
+            return best, f"site mentions {listed}{more}", True
         if len(ranked) > 1 and len(found) == runner_up and len(found) >= MIN_MATCHES:
             tied = " and ".join(k for k, v in ranked if len(v) == len(found))
-            return fallback, f"site fits {tied} equally; used {fallback_source}"
-    return fallback, f"no clear signal on site; used {fallback_source}"
+            return fallback, f"site fits {tied} equally; pre-selected {fallback_source}", False
+    if ranked:
+        return fallback, (f"weak signal on site ({ranked[0][0]}: {', '.join(ranked[0][1])}); "
+                          f"pre-selected {fallback_source}"), False
+    return fallback, f"no clear signal on site; pre-selected {fallback_source}", False

@@ -36,7 +36,9 @@ and investment products across 40 branches in Ghana."""
 
 class PickRoleTests(unittest.TestCase):
     def pick(self, text, fallback="devops"):
-        return role_match.pick_role(text, TRACKS, fallback=fallback)
+        role, reason, clear = role_match.pick_role(text, TRACKS, fallback=fallback)
+        self.last_clear = clear
+        return role, reason
 
     def test_company_gets_the_role_its_site_describes(self):
         cases = [(FINTECH, "software"), (CLOUD_CONSULTANCY, "devops"), (IT_SERVICES, "sysadmin")]
@@ -44,20 +46,25 @@ class PickRoleTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 role, reason = self.pick(text, fallback="sysadmin" if expected != "sysadmin" else "devops")
                 self.assertEqual(role, expected, reason)
+                self.assertTrue(self.last_clear)
                 self.assertTrue(reason.startswith("site mentions"), reason)
 
     def test_no_signal_falls_back_and_says_so(self):
         role, reason = self.pick(BANK, fallback="devops")
         self.assertEqual(role, "devops")
+        self.assertFalse(self.last_clear, "no signal must go to a human, not be sent on a guess")
         self.assertIn("no clear signal", reason)
 
     def test_one_keyword_repeated_is_not_enough(self):
-        role, _ = self.pick("React. " * 50, fallback="devops")
+        role, reason = self.pick("React. " * 50, fallback="devops")
         self.assertEqual(role, "devops")
+        self.assertFalse(self.last_clear)
+        self.assertIn("weak signal", reason)
 
     def test_tie_falls_back(self):
         role, reason = self.pick("We use React, TypeScript, Kubernetes and Terraform.", fallback="sysadmin")
         self.assertEqual(role, "sysadmin")
+        self.assertFalse(self.last_clear)
         self.assertIn("equally", reason)
 
     def test_no_partial_word_matches(self):
@@ -73,8 +80,8 @@ class PickRoleTests(unittest.TestCase):
     def test_role_without_keywords_is_never_picked(self):
         tracks = {k: dict(v) for k, v in TRACKS.items()}
         tracks["software"]["keywords"] = []
-        role, _ = role_match.pick_role(FINTECH, tracks, fallback="devops")
-        self.assertEqual(role, "devops")
+        role, _, clear = role_match.pick_role(FINTECH, tracks, fallback="devops")
+        self.assertEqual((role, clear), ("devops", False))
 
 
 class FakeExa:
@@ -101,9 +108,39 @@ class ScrapeTaggingTests(InTempDir):
         rows = {r["company_name"]: r for r in op.load_queue()}
         self.assertEqual(rows["PayFlow"]["track"], "software")
         self.assertEqual(rows["Nimbus Cloud"]["track"], "devops")
-        self.assertEqual(rows["Savings Bank"]["track"], "devops")
+        self.assertEqual(rows["Savings Bank"]["track"], "devops", "pre-selected guess")
         self.assertIn("this search's role", rows["Savings Bank"]["role_reason"])
         self.assertIn("react", rows["PayFlow"]["role_reason"])
+        self.assertEqual(rows["PayFlow"]["role_review"], "")
+        self.assertEqual(rows["Savings Bank"]["role_review"], "yes")
+
+    def test_unclear_role_is_never_approved_or_sent_until_chosen(self):
+        applicant, op, _ = self.reload_pipeline()
+        from test_roles import FakeSMTP, write_queue, write_file
+        import smtp_client
+        fake = FakeSMTP(); fake.install(smtp_client)
+        op.time.sleep = lambda s: None
+        write_file(applicant.cv_path_for("devops"), b"%PDF-devops")
+        write_queue(op, [
+            {"company_name": "Unsure Co", "email": "a@unsure.co", "status": "Pending", "track": "devops",
+             "role_review": "yes", "recipient_name": "The Team"},
+            {"company_name": "Unsure Approved", "email": "a@ua.co", "status": "Approved", "track": "devops",
+             "role_review": "yes", "recipient_name": "The Team"},
+            {"company_name": "Sure Co", "email": "a@sure.co", "status": "Pending", "track": "devops",
+             "recipient_name": "The Team"},
+        ])
+        op.run_auto_approve()
+        status = {r["company_name"]: r["status"] for r in op.load_queue()}
+        self.assertEqual(status["Unsure Co"], "Pending", "auto-approve must skip it")
+        op.run_send_emails()
+        self.assertEqual([to for to, _ in fake.sent], ["a@sure.co"])
+
+        # The review email lists it, once.
+        sent_before = len(fake.sent)
+        op.run_notify_needs_review()
+        body = fake.sent[sent_before][1].get_content()
+        self.assertIn("Unsure Co", body)
+        self.assertIn("choose a role", body)
 
     def test_untagged_search_falls_back_to_default_role(self):
         applicant, op, _ = self.reload_pipeline()
@@ -112,6 +149,7 @@ class ScrapeTaggingTests(InTempDir):
         row = op.load_queue()[0]
         self.assertEqual(row["track"], applicant.DEFAULT_TRACK)
         self.assertIn("the default role", row["role_reason"])
+        self.assertEqual(row["role_review"], "yes")
 
     def test_tracks_json_saved_before_keywords_gets_defaults(self):
         applicant, _, _ = self.reload_pipeline()
@@ -140,7 +178,8 @@ class DashboardKeywordTests(unittest.TestCase):
         self.fake = FakeStateRepo(state_repo)
         self.fake.files["outreach_queue.csv"] = (
             ",".join(state_repo.QUEUE_FIELDS) + "\n"
-            + "PayFlow,https://payflow.com,a@payflow.com,fintech,The Team,,Approved,,,,,software,,,,,site mentions react\n"
+            + "PayFlow,https://payflow.com,a@payflow.com,fintech,The Team,,Approved,,,,,software,,,,,site mentions react,\n"
+            + "Unsure Co,https://unsure.co,a@unsure.co,general_startup,The Team,,Pending,,,,,devops,,,,,no clear signal on site; pre-selected the default role,yes\n"
         ).encode()
         self.c = webapp.app.test_client()
         with self.c.session_transaction() as s:
@@ -181,6 +220,41 @@ class DashboardKeywordTests(unittest.TestCase):
         })
         self.assertIn(b",devops,", self.fake.files["outreach_queue.csv"])
         self.assertIn(b"set by you", self.fake.files["outreach_queue.csv"])
+
+
+class DashboardChooseRoleTests(DashboardKeywordTests):
+    def queue(self):
+        import state_repo
+        return {r["company_name"]: r for r in state_repo._parse_queue(self.fake.files["outreach_queue.csv"].decode())}
+
+    def test_unclear_role_waits_in_needs_you_with_a_picker(self):
+        page = self.c.get("/attention").data.decode()
+        self.assertIn('"reason": "role"', page)
+        self.assertIn("no clear signal on site", page)
+        # (Every page embeds all names for the search palette, so look for the table row's link.)
+        self.assertNotIn('href="/companies/unsure-co"', self.c.get("/upcoming").data.decode(), "not queued to send")
+
+    def test_choosing_a_role_requeues_it(self):
+        r = self.c.post("/companies/unsure-co/resolve", data={"reason": "role", "track": "software"},
+                        headers={"Accept": "application/json"})
+        self.assertTrue(r.get_json()["ok"], r.get_json())
+        row = self.queue()["Unsure Co"]
+        self.assertEqual((row["track"], row["role_review"], row["role_reason"]), ("software", "", "set by you"))
+        self.assertIn('href="/companies/unsure-co"', self.c.get("/upcoming").data.decode())
+
+    def test_unknown_role_rejected(self):
+        r = self.c.post("/companies/unsure-co/resolve", data={"reason": "role", "track": "nope"},
+                        headers={"Accept": "application/json"})
+        self.assertFalse(r.get_json()["ok"])
+        self.assertEqual(self.queue()["Unsure Co"]["role_review"], "yes")
+
+    def test_saving_company_page_counts_as_choosing(self):
+        self.c.post("/companies/unsure-co", data={
+            "company_name": "Unsure Co", "email": "a@unsure.co", "website": "https://unsure.co",
+            "company_type": "general_startup", "track": "devops", "status": "Pending", "recipient_name": "The Team",
+        })
+        row = self.queue()["Unsure Co"]
+        self.assertEqual((row["track"], row["role_review"], row["role_reason"]), ("devops", "", "set by you"))
 
 
 if __name__ == "__main__":
