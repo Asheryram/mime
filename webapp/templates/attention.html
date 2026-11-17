@@ -57,8 +57,11 @@
     name: { label: "Unclear company name", short: "Unclear name",
             why: "The page title didn't give a name the scraper could trust in a “Dear … team” letter. Check the site and type the real one. Add an email if you have it; otherwise the next scrape looks for one." },
     failed: { label: "Send failed", short: "Send failed",
-              why: "Gmail refused or dropped the connection when this was sent. Usually temporary. Fix the address if it looks wrong, then retry at the next send." }
+              why: "Gmail refused or dropped the connection when this was sent. Usually temporary. Fix the address if it looks wrong, then retry at the next send." },
+    role: { label: "Choose a role", short: "Choose role",
+            why: "The site didn't clearly fit one role, so this waits for you instead of guessing. Open the site, pick the pitch (and CV) it should get, and it rejoins the queue." }
   };
+  function fieldId(reason) { return reason === "name" ? "t-name" : reason === "role" ? "t-role" : "t-email"; }
   var filter = "all", selSlug = null, checked = {};
   var els = {
     filters: document.getElementById("t-filters"), list: document.getElementById("t-items"),
@@ -97,9 +100,9 @@
 
   function renderFilters() {
     els.filters.innerHTML = "";
-    var counts = { all: items.length, email: 0, name: 0, failed: 0 };
+    var counts = { all: items.length, role: 0, email: 0, name: 0, failed: 0 };
     items.forEach(function (i) { counts[i.reason]++; });
-    [["all", "All"], ["email", "No email"], ["name", "Unclear name"], ["failed", "Send failed"]].forEach(function (f) {
+    [["all", "All"], ["role", "Choose role"], ["email", "No email"], ["name", "Unclear name"], ["failed", "Send failed"]].forEach(function (f) {
       if (f[0] !== "all" && !counts[f[0]] && filter !== f[0]) return;
       els.filters.appendChild(h("a", {
         href: "#", role: "tab", "aria-selected": filter === f[0] ? "true" : "false",
@@ -171,8 +174,16 @@
       ? h("div", { class: "sugg" }, ["From the domain:", chip(i.name_suggestion, nameInput)]) : null;
 
     var fields = [];
-    if (i.reason === "name") fields.push(field("t-name", "Real company name", nameInput, nameSugg));
-    fields.push(field("t-email", i.reason === "name" ? "Email (optional)" : "Email", emailInput, emailSugg));
+    if (i.reason === "role") {
+      var roleSelect = h("select", { id: "t-role", name: "track" }, i.tracks.map(function (t) {
+        return h("option", { value: t, selected: t === i.track, text: t + (t === i.track ? " (best guess)" : "") });
+      }));
+      fields.push(field("t-role", "Pitch this company as", roleSelect,
+        i.role_reason ? h("div", { class: "sugg" }, [h("span", { text: "Why it's unsure: " + i.role_reason })]) : null));
+    } else {
+      if (i.reason === "name") fields.push(field("t-name", "Real company name", nameInput, nameSugg));
+      fields.push(field("t-email", i.reason === "name" ? "Email (optional)" : "Email", emailInput, emailSugg));
+    }
 
     var saveBtn = h("button", { type: "submit", class: "primary" }, [i.reason === "failed" ? "Retry & next" : "Save & next", h("kbd", { text: "↵" })]);
     var form = h("form", { novalidate: true }, [err].concat(fields).concat([
@@ -238,7 +249,7 @@
     if (!items.length) els.detail.classList.remove("open");
     // Keep the flow going: if you were typing, land in the next lead's field.
     if (wasTyping && selSlug) {
-      var f = document.getElementById(bySlug(selSlug).reason === "name" ? "t-name" : "t-email");
+      var f = document.getElementById(fieldId(bySlug(selSlug).reason));
       if (f) { f.focus(); f.select && f.select(); }
     }
   }
@@ -254,7 +265,18 @@
   }
 
   function save(i, form, err, btn) {
-    var name = form.querySelector("#t-name"), email = form.querySelector("#t-email");
+    var name = form.querySelector("#t-name"), email = form.querySelector("#t-email"), role = form.querySelector("#t-role");
+    if (i.reason === "role") {
+      var typingRole = form.contains(document.activeElement), rdata = new FormData();
+      rdata.append("reason", "role"); rdata.append("track", role.value);
+      btn.disabled = true;
+      post(URL_RESOLVE.replace("__S__", i.slug), rdata).then(function (res) {
+        btn.disabled = false;
+        if (!res.ok) { err.textContent = res.message; err.hidden = false; return; }
+        toast(res.message); removeItems([i.slug], typingRole);
+      });
+      return;
+    }
     if (i.reason === "name" && !name.value.trim()) { err.textContent = "Enter the company's real name."; err.hidden = false; name.focus(); return; }
     if (i.reason !== "name" && !email.value.trim()) { err.textContent = "Enter an email address."; err.hidden = false; email.focus(); return; }
     var typing = form.contains(document.activeElement);
@@ -305,9 +327,9 @@
     else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
     else if ((e.key === "e" || e.key === "Enter") && i) {
       e.preventDefault();
-      var f = document.getElementById(i.reason === "name" ? "t-name" : "t-email");
+      var f = document.getElementById(fieldId(i.reason));
       if (mobile.matches) els.detail.classList.add("open");
-      if (f) { f.focus(); f.select(); }
+      if (f) { f.focus(); if (f.select) f.select(); }
     }
     else if (e.key === "x" && i) { e.preventDefault(); drop(i); }
     else if (e.key === "o" && i && i.website) { e.preventDefault(); window.open(i.website, "_blank", "noopener"); }

@@ -83,6 +83,13 @@
         <p class="small muted" style="margin-top:4px">Specific and checkable: what you built, with what, and the result. Numbers beat adjectives.</p></div>
     </div>
 
+    <h3 style="font-size: 14px; margin: 18px 0 4px;">Which companies get this role</h3>
+    <p class="hint">When the scraper finds a company, it reads the company's page and gives it the role whose keywords it mentions most: at least 2 different ones, and more than any other role. Otherwise the company gets the search's role. Use specific words (<span class="mono">react</span>, <span class="mono">kubernetes</span>), not ones every company uses (<span class="mono">cloud</span>, <span class="mono">solutions</span>).</p>
+    <div class="form-grid">
+      <div class="full"><label for="keywords">Keywords (comma-separated)</label>
+        <textarea id="keywords" name="keywords" rows="3" placeholder="react, node.js, typescript, saas, web application">{{ form.get('keywords', '') }}</textarea></div>
+    </div>
+
     <h3 style="font-size: 14px; margin: 18px 0 4px;">Cover letter</h3>
     <p class="hint">Write <span class="mono">{company}</span> and <span class="mono">{role}</span> where the company's name and the role title should go.{% if key and role.get('letter') is none %} Leave every letter field empty to keep the sector-specific DevOps letters.{% endif %}</p>
     <div class="form-grid">

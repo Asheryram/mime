@@ -17,7 +17,7 @@
           <td>{{ company_link(c) }}</td>
           <td class="mono">{{ c.email }}</td>
           <td class="nowrap">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.host }} &nearr;</a>{% endif %}</td>
-          <td class="muted">{{ c.company_type }} &middot; {{ c.track }}</td>
+          <td class="muted">{{ c.company_type }} &middot; <span {% if c.role_reason %}title="Why: {{ c.role_reason }}" style="text-decoration: underline dotted; cursor: help;"{% endif %}>{{ c.track }}</span></td>
           <td class="nowrap">
             {% if c.held %}<a href="{{ url_for('role_detail', key=c.track or 'devops') }}" class="pill later" title="Fix this on the role's page">held: {{ c.held }}</a>
             {% elif c.send_pos <= limit %}<span class="pill today">{{ next_send|when }}</span>

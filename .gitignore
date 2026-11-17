@@ -19,6 +19,7 @@
 !outreach_pipeline.py
 !followup_pipeline.py
 !smtp_client.py
+!role_match.py
 
 # Whitelist the test suite (fakes SMTP and GitHub; no secrets)
 !tests/

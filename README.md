@@ -46,9 +46,13 @@ The built-in roles are `devops`, `software` (full-stack) and `sysadmin`. Nothing
 *   **A malformed `tracks.json` fails the run** rather than silently falling back to old pitches.
 *   **Every claim must be one that role's CV backs up.** Tailor each CV's title, summary and project order to the role, but keep the facts identical across them: recruiters compare against LinkedIn.
 
-### Pointing the scraper at a role
+### How companies get their role
 
-Each line of `search_queries.txt` (dashboard &rarr; Settings) can name a role as a third part: `SaaS startups in Accra | 10 | software`. Leads it finds get that role. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
+The scraper reads each company's page and gives it the role whose **keywords** it mentions most (`role_match.py`). Each role's keywords are editable on its dashboard page, e.g. `react, node.js, saas` for full-stack or `kubernetes, terraform, aws` for DevOps. A role wins only with a clear lead: at least 2 different keywords, and more than any other role. One word repeated many times doesn't count, and partial words don't match (`laws` is not `aws`).
+
+**Otherwise you decide.** The company waits in **Needs you** under *Choose a role*, with the search's role (or the default) pre-selected as a best guess and the reason it's unsure. It is never auto-approved or sent until you pick one (on Needs you, or by saving its page), and the review email lists it. Searches can still carry a role as that best guess. Each line of `search_queries.txt` (dashboard &rarr; Settings) can name one as a third part: `SaaS startups in Accra | 10 | software`. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
+
+Every company records why it got its role (`role_reason`, e.g. *site mentions react, typescript*, or *no clear signal on site; pre-selected this search's role* for one waiting on you). This shows on its page and on Up next, where you can change it before the send; your change is recorded as *set by you*. Companies already in the queue keep their current role.
 
 ### The DevOps sector letters
 
@@ -62,6 +66,7 @@ The `devops` role has no `letter` in its data (`null`), so it keeps the five sec
 | :--- | :--- |
 | **`applicant.py`** | 🔴 **Edit this first.** Your name and contact details, plus the loader for your roles (`tracks.json`). Every other file reads from here. |
 | **`webapp/tracks_default.json`** | The built-in roles, used until `tracks.json` is first saved. |
+| **`role_match.py`** | Picks each scraped company's role from the keywords its page mentions. |
 | **`tests/`** | `python3 -m unittest discover tests`: role CVs, held rows, follow-ups and the dashboard, with SMTP and GitHub faked. |
 | **`outreach_pipeline.py`** | Main CLI orchestrator: search, scrape, generate, send, status, import. |
 | **`followup_pipeline.py`** | Follow-up manager: date eligibility, exclusions, threaded check-ins. |

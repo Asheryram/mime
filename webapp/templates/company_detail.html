@@ -4,7 +4,7 @@
 {% block page_sub %}<span class="pill {{ c.status }}">{{ c.status }}</span>
   {% if c.bucket == "upcoming" %} Goes out at the next send.
   {% elif c.bucket == "scraping" %} Waiting for the next scrape to find an email.
-  {% elif c.bucket == "attention" %} Needs you: {{ {"name": "the company name is unclear", "email": "no email was found", "failed": "the last send failed"}[reason] }}.
+  {% elif c.bucket == "attention" %} Needs you: {{ {"name": "the company name is unclear", "email": "no email was found", "failed": "the last send failed", "role": "no role clearly fits, so choose one and save"}[reason] }}.
   {% elif c.bucket == "sent" %} Sent {{ c.date_sent|day }}{% if c.date_followup %}, followed up {{ c.date_followup|day }}{% endif %}.
   {% elif c.status == "Rejected" %} Won't be emailed.
   {% endif %}
@@ -26,7 +26,8 @@
         <div><label for="company_type">Type (picks the cover letter variant)</label>
           <select id="company_type" name="company_type">{% for t in company_types %}<option value="{{ t }}" {{ 'selected' if t == c.company_type }}>{{ t }}</option>{% endfor %}</select></div>
         <div><label for="track">Role (picks the pitch and CV)</label>
-          <select id="track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == c.track }}>{{ t }}</option>{% endfor %}</select></div>
+          <select id="track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == c.track }}>{{ t }}</option>{% endfor %}</select>
+          {% if c.role_reason %}<p class="small muted" style="margin-top:4px">Why: {{ c.role_reason }}</p>{% endif %}</div>
         <div><label for="recipient_name">Addressed to</label>
           <input id="recipient_name" type="text" name="recipient_name" value="{{ c.recipient_name }}"></div>
         <div><label for="company_address">Address on the letter</label>

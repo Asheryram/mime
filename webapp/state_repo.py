@@ -38,6 +38,7 @@ QUEUE_FIELDS = [
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
+    "role_reason", "role_review",
 ]
 
 
@@ -207,12 +208,20 @@ def save_queries_text(text, message):
 
 # --- Roles (tracks) and their CVs -------------------------------------------
 
+def _backfill(tracks):
+    """A tracks.json saved before keywords existed gets the defaults for built-in roles."""
+    for key, t in tracks.items():
+        if "keywords" not in t:
+            t["keywords"] = list(DEFAULT_TRACKS.get(key, {}).get("keywords", []))
+    return tracks
+
+
 def get_tracks():
     """Returns (tracks_dict, saved). saved is False while the defaults are in use."""
     raw, _ = _get_file_bytes(TRACKS_PATH)
     if raw is None:
         return copy.deepcopy(DEFAULT_TRACKS), False
-    return json.loads(raw.decode("utf-8")), True
+    return _backfill(json.loads(raw.decode("utf-8"))), True
 
 
 def mutate_tracks(fn, message, attempts=3):
@@ -222,7 +231,7 @@ def mutate_tracks(fn, message, attempts=3):
     """
     for attempt in range(attempts):
         raw, sha = _get_file_bytes(TRACKS_PATH)
-        tracks = json.loads(raw.decode("utf-8")) if raw is not None else copy.deepcopy(DEFAULT_TRACKS)
+        tracks = _backfill(json.loads(raw.decode("utf-8"))) if raw is not None else copy.deepcopy(DEFAULT_TRACKS)
         result = fn(tracks)
         body = (json.dumps(tracks, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         try:
