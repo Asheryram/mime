@@ -113,6 +113,16 @@ class ScrapeTaggingTests(InTempDir):
         self.assertEqual(row["track"], applicant.DEFAULT_TRACK)
         self.assertIn("the default role", row["role_reason"])
 
+    def test_tracks_json_saved_before_keywords_gets_defaults(self):
+        applicant, _, _ = self.reload_pipeline()
+        old = {k: {f: v for f, v in t.items() if f != "keywords"} for k, t in applicant.TRACKS.items()}
+        old["platform"] = dict(old["devops"], cv_path="cv_platform.pdf")
+        with open("tracks.json", "w") as f:
+            json.dump(old, f)
+        applicant, _, _ = self.reload_pipeline()
+        self.assertIn("react", applicant.TRACKS["software"]["keywords"])
+        self.assertEqual(applicant.TRACKS["platform"]["keywords"], [], "custom roles don't borrow keywords")
+
     def test_bad_keywords_in_tracks_json_fail_loudly(self):
         applicant, _, _ = self.reload_pipeline()
         bad = {k: dict(v) for k, v in applicant.TRACKS.items()}
@@ -153,6 +163,12 @@ class DashboardKeywordTests(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         saved = json.loads(self.fake.files["tracks.json"])
         self.assertEqual(saved["software"]["keywords"], ["react", "vue", "svelte"])
+
+    def test_old_tracks_json_shows_default_keywords(self):
+        import state_repo
+        old = {k: {f: v for f, v in t.items() if f != "keywords"} for k, t in state_repo.DEFAULT_TRACKS.items()}
+        self.fake.files["tracks.json"] = json.dumps(old).encode()
+        self.assertIn("react, next.js", self.c.get("/roles/software").data.decode())
 
     def test_reason_shown_and_manual_change_recorded(self):
         page = self.c.get("/companies/payflow").data.decode()

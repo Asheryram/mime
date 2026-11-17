@@ -91,6 +91,11 @@ REQUIRED_TRACK_FIELDS = [
 ]
 
 
+def _default_keywords():
+    with open(DEFAULT_TRACKS_FILE, encoding="utf-8") as f:
+        return {k: t.get("keywords", []) for k, t in json.load(f).items()}
+
+
 def load_tracks(path=None):
     """
     Read and validate the tracks file. A malformed tracks.json raises rather
@@ -113,7 +118,11 @@ def load_tracks(path=None):
         missing = [k for k in REQUIRED_TRACK_FIELDS if not t.get(k)]
         if missing:
             raise ValueError(f"{path}: track '{key}' is missing {', '.join(missing)}.")
-        kws = t.setdefault("keywords", [])
+        if "keywords" not in t:
+            # A tracks.json saved before keywords existed: give the built-in
+            # roles their default keywords rather than silently none.
+            t["keywords"] = list(_default_keywords().get(key, []))
+        kws = t["keywords"]
         if not isinstance(kws, list) or not all(isinstance(k, str) for k in kws):
             raise ValueError(f"{path}: track '{key}' keywords must be a list of strings.")
         if not isinstance(t["highlights"], list):
