@@ -22,6 +22,7 @@
 
   <div class="nav-label">Manage</div>
   <a href="{{ url_for('companies_list') }}" class="nav-item {{ 'active' if active == 'companies' }}">{{ icon("companies") }} Companies <span class="nav-count">{{ nav.total }}</span></a>
+  <a href="{{ url_for('roles') }}" class="nav-item {{ 'active' if active == 'roles' }}">{{ icon("companies") }} Roles</a>
   <a href="{{ url_for('activity') }}" class="nav-item {{ 'active' if active == 'activity' }}">{{ icon("activity") }} Activity</a>
   <a href="{{ url_for('settings') }}" class="nav-item {{ 'active' if active == 'settings' }}">{{ icon("settings") }} Settings</a>
 

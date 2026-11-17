@@ -10,6 +10,10 @@ gitignored, so this file stays publishable without exposing a personal number
 and inbox to search engines and address scrapers.
 """
 
+import json
+import os
+import re
+
 from config import config
 
 # --- Identity -----------------------------------------------------------
@@ -29,105 +33,99 @@ LINKEDIN_LABEL = "linkedin.com/in/asher-tetteh-abotsi"
 GITHUB_URL = "https://github.com/Asheryram"
 GITHUB_LABEL = "github.com/Asheryram"
 
-# Your master CV. Place this PDF in the repository root.
-CV_PATH = "YramAsherTettehAbotsi_resume.pdf"
-
 # Prefix for generated cover letter filenames (no spaces).
 FILE_SLUG = "Asher_Yram_Tetteh-Abotsi"
 
-# --- Application tracks --------------------------------------------------
+# Each track attaches its own CV (see "cv_path" in TRACKS below), but the
+# recipient always sees this one filename. Otherwise a company receiving
+# "cv_software.pdf" learns there is a DevOps version too.
+CV_ATTACHMENT_NAME = f"{FILE_SLUG}_CV.pdf"
+
+# --- Application tracks ("roles") ------------------------------------------
 # One pitch per kind of role applied for. A queue row carries a track, so the
 # same campaign can approach one company about DevOps work and another about
-# backend engineering without either letter reading like a generic template.
+# full-stack engineering, each with its own CV, letter, and email.
 #
-# Every claim below must be supported by the CV - the letter and the CV are
-# read side by side, and a highlight the resume cannot back is worse than no
-# highlight at all.
-TRACKS = {
-    "devops": {
-        "role_title": "Cloud & DevOps Engineer",
-        "subject_area": "Cloud & DevOps Engineering",
-        "interest_area": "Cloud and DevOps Engineering",
-        "closing_skills": "cloud engineering skills, automation focus, and adaptability",
-        "credentials": (
-            "a Computer Science graduate of KNUST and a Cloud Engineer who designs "
-            "and automates AWS infrastructure"
-        ),
-        "highlights": [
-            "Building a self-healing AWS system for a Flask microservice using Lambda, "
-            "CloudWatch, and Amazon Bedrock that detects anomalies and generates "
-            "AI-driven root-cause reports without manual intervention.",
+# Tracks are data, not code. They are read from tracks.json (the companion
+# state repo's copy, which the dashboard's Roles page edits and CI copies in),
+# falling back to the shipped defaults in webapp/tracks_default.json until that
+# file exists. To change a pitch, edit it on the dashboard, or edit tracks.json.
+#
+# Per-track fields (all strings unless noted):
+#   active             bool. An inactive track is never sent; its rows wait.
+#   cv_path            The PDF attached for this track. Tailor each CV to the
+#                      role but keep the facts identical across them. A track
+#                      whose CV is missing is held, never sent with another's.
+#   headline           Title under your name on the cover letter letterhead.
+#   role_title         "...the {role_title} position at <company>".
+#   subject_area       Email subject: "<subject_area> Application - <name>".
+#   interest_area      "...strong interest in <interest_area> opportunities".
+#   credentials        "My name is X. I am <credentials>."
+#   closing_skills     Closing line of the default letter.
+#   highlights         list of 2-5 strings, the email's bullet points.
+#   followup_expertise "...how my experience with <this> can support...".
+#   letter             The cover letter body: {"intro", "lead_in", "bullets":
+#                      [{"title", "text"}], "closing"}, plain text, with
+#                      {company} and {role} filled in per company. null keeps
+#                      the sector-specific DevOps templates in
+#                      cover_letter_generator.get_template_paragraphs().
+#
+# Every claim must be one that track's CV backs up: the letter and the CV are
+# read side by side, and an unbacked claim is worse than no claim.
 
-            "Provisioning 55 AWS resources through modular Terraform (VPC, EC2, Lambda, "
-            "EventBridge, SNS) with tfsec security scanning and GitHub Actions CI for "
-            "fully reproducible infrastructure.",
+_HERE = os.path.dirname(os.path.abspath(__file__))
+TRACKS_FILE = "tracks.json"
+DEFAULT_TRACKS_FILE = os.path.join(_HERE, "webapp", "tracks_default.json")
 
-            "Cutting infrastructure cost 60% through automated instance scheduling, "
-            "delivered via Jenkins CI/CD pipelines with full observability "
-            "(Prometheus, Grafana, Alertmanager, Jaeger).",
+# Mirrored in webapp/app.py's role form validation.
+TRACK_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+CV_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$")
 
-            "Engineering a secure software supply chain and disaster recovery lab with "
-            "immutable artifacts and cross-region RDS failover, achieving a recovery "
-            "time objective of 30 minutes or less.",
-        ],
-    },
+REQUIRED_TRACK_FIELDS = [
+    "cv_path", "headline", "role_title", "subject_area", "interest_area",
+    "credentials", "closing_skills", "highlights", "followup_expertise",
+]
 
-    "software": {
-        "role_title": "Software Engineer",
-        "subject_area": "Software Engineering",
-        "interest_area": "Software Engineering",
-        "closing_skills": "backend engineering skills, product focus, and adaptability",
-        "credentials": (
-            "a Computer Science graduate of KNUST and a software engineer who builds "
-            "backend services and full-stack products"
-        ),
-        "highlights": [
-            "Building an AI assistant backend in NestJS and TypeScript, integrating the "
-            "Anthropic Claude SDK for intent detection and policy-driven customer "
-            "conversations, deployed to AWS ECS Fargate.",
 
-            "Designing a microservices school management system in Node.js with dedicated "
-            "auth, user, school, communication, and notification services behind an API "
-            "gateway, orchestrated with Docker Compose.",
+def load_tracks(path=None):
+    """
+    Read and validate the tracks file. A malformed tracks.json raises rather
+    than falling back to the defaults: silently sending the old pitches after
+    you edited them is worse than a failed run that tells you why.
+    """
+    if path is None:
+        path = TRACKS_FILE if os.path.exists(TRACKS_FILE) else DEFAULT_TRACKS_FILE
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not data:
+        raise ValueError(f"{path}: expected a non-empty object of tracks.")
+    for key, t in data.items():
+        # Keys are stored on queue rows and cv_path is used as a bare filename
+        # in CI's shell; neither may carry slashes, spaces, or "..".
+        if not TRACK_KEY_RE.match(key):
+            raise ValueError(f"{path}: track key '{key}' must be lowercase letters, digits, - or _.")
+        if not CV_FILENAME_RE.match(str(t.get("cv_path", ""))) or ".." in t["cv_path"]:
+            raise ValueError(f"{path}: track '{key}' cv_path must be a plain .pdf filename.")
+        missing = [k for k in REQUIRED_TRACK_FIELDS if not t.get(k)]
+        if missing:
+            raise ValueError(f"{path}: track '{key}' is missing {', '.join(missing)}.")
+        if not isinstance(t["highlights"], list):
+            raise ValueError(f"{path}: track '{key}' highlights must be a list.")
+        letter = t.get("letter")
+        if letter is not None:
+            ok = (isinstance(letter, dict) and letter.get("intro") and letter.get("closing")
+                  and isinstance(letter.get("bullets"), list)
+                  and all(b.get("title") and b.get("text") for b in letter["bullets"]))
+            if not ok:
+                raise ValueError(f"{path}: track '{key}' letter needs intro, closing, and "
+                                 f"bullets with a title and text each.")
+        t.setdefault("active", True)
+        t.setdefault("letter", None)
+    return data
 
-            "Developing a React and Vite frontend that generates client-facing PDF "
-            "proposals, and refactoring a legacy Python codebase to cut redundancy 50% "
-            "while improving readability.",
 
-            "Working across Java, Python, TypeScript, C++, and SQL/NoSQL, with the CI/CD "
-            "and containerisation background to take a service from commit to production "
-            "without handing it off.",
-        ],
-    },
-
-    "sysadmin": {
-        "role_title": "IT Systems Administrator",
-        "subject_area": "IT and Systems Administration",
-        "interest_area": "IT and Systems Administration",
-        "closing_skills": "systems administration skills, security focus, and adaptability",
-        "credentials": (
-            "a Computer Science graduate of KNUST and an infrastructure engineer who "
-            "administers and secures cloud and network systems"
-        ),
-        "highlights": [
-            "Provisioning and configuring 10+ AWS services including EC2, S3, IAM, and "
-            "CloudFormation, designing secure VPCs and IAM roles that cut potential "
-            "security misconfigurations by 30%.",
-
-            "Applying Cisco networking fundamentals (subnetting, routing) to production "
-            "cloud topologies, alongside day-to-day Linux and Bash administration.",
-
-            "Running monitoring and alerting across Prometheus, Grafana, Alertmanager, and "
-            "Jaeger, with GuardDuty threat detection, so faults surface before users "
-            "report them.",
-
-            "Building and testing disaster recovery with cross-region RDS failover and "
-            "immutable backups, achieving a recovery time objective of 30 minutes or less.",
-        ],
-    },
-}
-
-DEFAULT_TRACK = "devops"
+TRACKS = load_tracks()
+DEFAULT_TRACK = "devops" if "devops" in TRACKS else next(iter(TRACKS))
 
 
 def get_track(track=None):
@@ -135,8 +133,37 @@ def get_track(track=None):
     return TRACKS.get((track or DEFAULT_TRACK).strip().lower(), TRACKS[DEFAULT_TRACK])
 
 
+def cv_path_for(track=None):
+    """
+    The CV to attach for a track. Unlike get_track this does NOT fall back to
+    the default track's CV for an unknown name: attaching the DevOps CV to a
+    software pitch is exactly the mismatch per-track CVs exist to prevent.
+    Returns None when the track is unknown.
+    """
+    t = TRACKS.get((track or DEFAULT_TRACK).strip().lower())
+    return t["cv_path"] if t else None
+
+
+def track_hold_reason(track=None):
+    """Why rows on this track can't be sent right now, or None if they can."""
+    key = (track or DEFAULT_TRACK).strip().lower()
+    t = TRACKS.get(key)
+    if not t:
+        return f"unknown track '{key}' (not in {TRACKS_FILE})"
+    if not t.get("active", True):
+        return f"track '{key}' is switched off"
+    if not os.path.exists(t["cv_path"]):
+        return f"no CV for track '{key}' at '{t['cv_path']}'"
+    return None
+
+
+def headline_for(track=None):
+    return get_track(track).get("headline") or HEADLINE
+
+
 # Backwards-compatible module-level values: anything that has not been made
 # track-aware keeps working and gets the default track's pitch.
+CV_PATH = TRACKS[DEFAULT_TRACK]["cv_path"]
 CREDENTIALS = TRACKS[DEFAULT_TRACK]["credentials"]
 EMAIL_HIGHLIGHTS = TRACKS[DEFAULT_TRACK]["highlights"]
 EMAIL_SUBJECT = f"{TRACKS[DEFAULT_TRACK]['subject_area']} Application - {FULL_NAME}"
@@ -183,19 +210,10 @@ def build_outreach_body(company_name, track=None):
     )
 
 
-# What the follow-up offers to talk through, per track.
-_FOLLOWUP_EXPERTISE = {
-    "devops": "Infrastructure as Code, CI/CD automation, and cloud cost optimisation",
-    "software": "backend service design, API development, and shipping features end to end",
-    "sysadmin": "cloud and network administration, monitoring, and security hardening",
-}
-
-
 def build_followup_body(company_name, recipient_name, original_date, track=None):
     """The 6-day check-in, with the original message quoted underneath."""
     t = get_track(track)
-    key = (track or DEFAULT_TRACK).strip().lower()
-    expertise = _FOLLOWUP_EXPERTISE.get(key, _FOLLOWUP_EXPERTISE[DEFAULT_TRACK])
+    expertise = t["followup_expertise"]
     return (
         f"Dear {recipient_name},\n\n"
         f"I hope this email finds you well.\n\n"

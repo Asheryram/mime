@@ -41,7 +41,6 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 ALLOWED_EMAIL = os.environ.get("ALLOWED_EMAIL", "ashertettehabotsi@gmail.com").strip().lower()
 COMPANY_TYPES = ["fintech", "consultancy", "isp", "bank", "general_startup"]
-TRACKS = ["devops", "software", "sysadmin"]
 STATUSES = ["Pending", "Approved", "Review", "Skipped", "Sent", "Followup-Sent", "Failed", "Rejected"]
 RESET_TOKEN_MAX_AGE = 3600  # 1 hour
 
@@ -57,7 +56,9 @@ DEFAULT_ADDRESS = "Accra, Ghana"
 
 # Must match DEFAULT_SEARCH_QUERIES in outreach_pipeline.py: what the scrape
 # workflow uses until search_queries.txt exists in the companion repo.
-DEFAULT_QUERIES_TEXT = """# One search per line. Optional "| N" sets how many results (1-25, default 10).
+DEFAULT_QUERIES_TEXT = """# One search per line. Optional "| N" sets how many results (1-25, default 10),
+# and an optional third "| role" tags what it finds with that role's pitch and CV,
+# e.g.  SaaS startups in Accra | 10 | software
 # Lines starting with # are ignored.
 cloud and devops engineering companies Accra Ghana | 10
 fintech and payments companies hiring engineers Ghana | 10
@@ -553,6 +554,24 @@ def upcoming():
     # among these rows is the send order.
     rows = [c for c in companies if c["bucket"] == "upcoming"]
     scraping = [c for c in companies if c["bucket"] == "scraping"]
+    # Mirror run_send_emails: rows on a switched-off role, or one with no CV,
+    # are held and skipped before the daily cap, so they don't take a slot.
+    tracks, _ = state_repo.get_tracks()
+    hold = {}
+    for key in {c["track"] or "devops" for c in rows}:
+        t = tracks.get(key)
+        if t is None:
+            hold[key] = "unknown role"
+        elif not t.get("active", True):
+            hold[key] = "role is off"
+        elif safe_call(state_repo.cv_size, t["cv_path"]) is None:
+            hold[key] = "role has no CV"
+    pos = 0
+    for c in rows:
+        c["held"] = hold.get(c["track"] or "devops")
+        if not c["held"]:
+            pos += 1
+            c["send_pos"] = pos
     return render_template(
         "upcoming.html", active="upcoming", nav=nav, rows=rows, scraping=scraping,
         limit=DAILY_SEND_LIMIT, next_send=next_send_run(utcnow()),
@@ -610,6 +629,7 @@ def companies_list():
 @login_required
 def company_new():
     _, nav = load_data()
+    tracks = track_keys()
     form = request.form if request.method == "POST" else {}
     if request.method == "POST":
         try:
@@ -625,7 +645,7 @@ def company_new():
                 "website": website,
                 "email": email,
                 "company_type": form.get("company_type") if form.get("company_type") in COMPANY_TYPES else "general_startup",
-                "track": form.get("track") if form.get("track") in TRACKS else TRACKS[0],
+                "track": form.get("track") if form.get("track") in tracks else tracks[0],
                 "recipient_name": form.get("recipient_name", "").strip() or DEFAULT_RECIPIENT,
                 "company_address": form.get("company_address", "").strip() or DEFAULT_ADDRESS,
                 "status": "Pending",
@@ -643,7 +663,7 @@ def company_new():
             return redirect(url_for("company_detail", slug=state_repo.slugify(name)))
     return render_template(
         "company_new.html", active="companies", nav=nav, form=form,
-        company_types=COMPANY_TYPES, tracks=TRACKS,
+        company_types=COMPANY_TYPES, tracks=tracks,
     )
 
 
@@ -655,6 +675,7 @@ def company_detail(slug):
     if company is None:
         flash("That company isn't in the queue any more.", "error")
         return redirect(url_for("companies_list"))
+    tracks = track_keys()
 
     if request.method == "POST":
         f = request.form
@@ -673,7 +694,7 @@ def company_detail(slug):
                 "website": clean_website(f.get("website")),
                 "email": email,
                 "company_type": f.get("company_type") if f.get("company_type") in COMPANY_TYPES else company["company_type"],
-                "track": f.get("track") if f.get("track") in TRACKS else company["track"],
+                "track": f.get("track") if f.get("track") in tracks else company["track"],
                 "recipient_name": f.get("recipient_name", "").strip() or DEFAULT_RECIPIENT,
                 "company_address": f.get("company_address", "").strip(),
                 "status": status,
@@ -690,7 +711,7 @@ def company_detail(slug):
 
     return render_template(
         "company_detail.html", active="companies", nav=nav, c=company,
-        statuses=STATUSES, company_types=COMPANY_TYPES, tracks=TRACKS,
+        statuses=STATUSES, company_types=COMPANY_TYPES, tracks=tracks,
         reason=attention_reason(company) if company["bucket"] == "attention" else None,
     )
 
@@ -789,20 +810,26 @@ def activity():
 
 # --- Settings ------------------------------------------------------------------------
 
-def parse_queries(text):
+def parse_queries(text, tracks):
     """Validate search_queries.txt the same way outreach_pipeline.load_search_queries reads it."""
     queries = []
     for n, line in enumerate(text.splitlines(), start=1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        query, _, limit = line.partition("|")
-        query = query.strip()
+        parts = [p.strip() for p in line.split("|")]
+        query = parts[0]
+        limit = parts[1] if len(parts) > 1 else ""
+        track = parts[2].lower() if len(parts) > 2 else ""
+        if len(parts) > 3:
+            raise ValueError(f"Line {n} has too many | separators (search | number | role).")
         if not query:
             raise ValueError(f"Line {n} has a limit but no search text.")
-        if limit.strip():
-            if not limit.strip().isdigit() or not 1 <= int(limit) <= 25:
+        if limit:
+            if not limit.isdigit() or not 1 <= int(limit) <= 25:
                 raise ValueError(f"Line {n}: the number after | must be between 1 and 25.")
+        if track and track not in tracks:
+            raise ValueError(f"Line {n}: no role called '{track}'. Roles: {', '.join(tracks)}.")
         queries.append(query)
     if not queries:
         raise ValueError("Add at least one search.")
@@ -813,12 +840,9 @@ def parse_queries(text):
 @login_required
 def settings():
     _, nav = load_data()
-    data, _ = state_repo.get_cv()
     queries_text = state_repo.get_queries_text()
     return render_template(
-        "settings.html", active="settings", nav=nav,
-        has_cv=data is not None,
-        cv_size_kb=max(0.1, round(len(data) / 1024, 1)) if data is not None else None,
+        "settings.html", active="settings", nav=nav, tracks=track_keys(),
         queries_text=queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT,
         queries_saved=queries_text is not None,
         scrape_run=safe_call(state_repo.latest_run, SCRAPE_WORKFLOW),
@@ -835,7 +859,7 @@ def settings():
 def settings_queries():
     text = request.form.get("queries", "").replace("\r\n", "\n").strip() + "\n"
     try:
-        queries = parse_queries(text)
+        queries = parse_queries(text, track_keys())
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("settings") + "#queries")
@@ -864,9 +888,240 @@ def settings_run(which):
     return redirect(url_for("settings"))
 
 
-@app.route("/settings/cv", methods=["POST"])
+# --- Roles (tracks) ------------------------------------------------------------
+# A role is one pitch: its own CV, letterhead title, email highlights and cover
+# letter. Stored in tracks.json in the companion repo; the pipeline reads the
+# same file (applicant.load_tracks), so what's saved here is what gets sent.
+
+# Mirrors applicant.TRACK_KEY_RE.
+TRACK_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+MAX_FIELD = 1200
+
+# (field, label, hint) for the one-line pitch fields, in form order.
+ROLE_TEXT_FIELDS = [
+    ("role_title", "Role title", "Used as “the ___ position at <company>”. e.g. Full-Stack Engineer"),
+    ("headline", "Letterhead title", "Printed under your name on the cover letter."),
+    ("subject_area", "Email subject area", "Subject becomes “___ Application - <your name>”."),
+    ("interest_area", "Interest area", "“I am writing to express my strong interest in ___ opportunities”."),
+    ("credentials", "Who you are", "“My name is <you>. I am ___.”"),
+    ("closing_skills", "Closing skills", "e.g. backend engineering skills, product focus, and adaptability"),
+    ("followup_expertise", "Follow-up talking points", "“how my experience with ___ can support your team’s goals”."),
+]
+LETTER_BULLETS = 3
+
+
+def track_keys():
+    tracks, _ = state_repo.get_tracks()
+    return list(tracks)
+
+
+def _clean(value, label, required=True):
+    v = (value or "").strip()
+    if required and not v:
+        raise ValueError(f"{label} is required.")
+    if len(v) > MAX_FIELD:
+        raise ValueError(f"{label} is too long ({len(v)} characters, max {MAX_FIELD}).")
+    return v
+
+
+def role_from_form(form, existing=None):
+    """Build a track dict from the role form. Raises ValueError with a user-facing message."""
+    role = dict(existing or {})
+    for field, label, _ in ROLE_TEXT_FIELDS:
+        role[field] = _clean(form.get(field), label)
+
+    highlights = [h.strip().lstrip("-• ").strip() for h in form.get("highlights", "").splitlines()]
+    highlights = [h for h in highlights if h]
+    if not 2 <= len(highlights) <= 5:
+        raise ValueError("Email highlights: write 2 to 5, one per line.")
+    role["highlights"] = [_clean(h, "A highlight") for h in highlights]
+
+    intro = _clean(form.get("letter_intro"), "Letter intro", required=False)
+    lead_in = _clean(form.get("letter_lead_in"), "Letter lead-in", required=False)
+    closing = _clean(form.get("letter_closing"), "Letter closing", required=False)
+    bullets = []
+    for i in range(1, LETTER_BULLETS + 1):
+        title = _clean(form.get(f"bullet_title_{i}"), f"Bullet {i} title", required=False)
+        text = _clean(form.get(f"bullet_text_{i}"), f"Bullet {i} text", required=False)
+        if bool(title) != bool(text):
+            raise ValueError(f"Letter bullet {i} needs both a title and text (or neither).")
+        if title:
+            bullets.append({"title": title, "text": text})
+
+    if not (intro or lead_in or closing or bullets):
+        # Only a role that already uses the sector-specific templates
+        # (the original devops role) may keep an empty letter.
+        if existing is not None and existing.get("letter") is None:
+            role["letter"] = None
+        else:
+            raise ValueError("Write the cover letter: an intro, at least 2 bullets, and a closing.")
+    else:
+        if not intro or not closing or len(bullets) < 2:
+            raise ValueError("The cover letter needs an intro, at least 2 bullets, and a closing.")
+        role["letter"] = {"intro": intro, "lead_in": lead_in, "bullets": bullets, "closing": closing}
+    return role
+
+
+def role_preview(role, company="Acme Ltd"):
+    """
+    The cold email exactly as applicant.build_outreach_body writes it, minus the
+    signature (your name and phone live in the pipeline's .env, not here).
+    tests/test_role_preview.py keeps the two in step.
+    """
+    highlights = "\n".join(f"- {h}" for h in role["highlights"])
+    subject = f"{role['subject_area']} Application - <your name>"
+    body = (
+        f"Dear Recruiting Team at {company},\n\n"
+        f"I hope this email finds you well.\n\n"
+        f"My name is <your name>. I am {role['credentials']}.\n\n"
+        f"I am writing to express my strong interest in {role['interest_area']} "
+        f"opportunities at {company}. To share details on how my background aligns "
+        f"with your work, I have attached my CV and a tailored cover letter.\n\n"
+        f"Some highlights of my work include:\n"
+        f"{highlights}\n\n"
+        f"I would welcome the opportunity to speak briefly with a member of your team or "
+        f"your engineering leads about how my skills and experience can "
+        f"add value to {company}.\n\n"
+        f"Thank you for your time and consideration.\n\n"
+    )
+    letter = None
+    if role.get("letter"):
+        def fill(t):
+            return (t or "").replace("{company}", company).replace("{role}", role["role_title"])
+        L = role["letter"]
+        letter = {
+            "intro": fill(L["intro"]), "lead_in": fill(L.get("lead_in")),
+            "bullets": [{"title": fill(b["title"]), "text": fill(b["text"])} for b in L["bullets"]],
+            "closing": fill(L["closing"]),
+        }
+    return {"subject": subject, "body": body, "letter": letter, "company": company}
+
+
+def _load_role(key):
+    tracks, saved = state_repo.get_tracks()
+    return tracks.get(key), tracks, saved
+
+
+@app.route("/roles")
 @login_required
-def settings_cv():
+def roles():
+    companies, nav = load_data()
+    tracks, saved = state_repo.get_tracks()
+    rows = []
+    for key, t in tracks.items():
+        size = safe_call(state_repo.cv_size, t["cv_path"])
+        queued = sum(1 for c in companies if c["bucket"] == "upcoming" and (c["track"] or "devops") == key)
+        sent_n = sum(1 for c in companies if c["bucket"] == "sent" and (c["track"] or "devops") == key)
+        rows.append({
+            "key": key, "t": t, "has_cv": size is not None,
+            "cv_kb": max(0.1, round(size / 1024, 1)) if size is not None else None,
+            "queued": queued, "sent": sent_n,
+            "live": bool(t.get("active", True)) and size is not None,
+        })
+    return render_template("roles.html", active="roles", nav=nav, rows=rows, saved=saved)
+
+
+@app.route("/roles/new", methods=["GET", "POST"])
+@login_required
+def role_new():
+    _, nav = load_data()
+    form = request.form if request.method == "POST" else {}
+    if request.method == "POST":
+        try:
+            key = form.get("key", "").strip().lower()
+            if not TRACK_KEY_RE.match(key):
+                raise ValueError("Short name: lowercase letters, digits, - or _ (e.g. fullstack, platform).")
+            role = role_from_form(form)
+            # A new role starts switched off: nothing goes out under it until it
+            # has a CV and you've turned it on from its page.
+            role.update({"active": False, "cv_path": f"cv_{key}.pdf"})
+
+            def add(tracks):
+                if key in tracks:
+                    raise ValueError(f"There's already a role called '{key}'.")
+                tracks[key] = role
+            state_repo.mutate_tracks(add, f"Add role '{key}' via dashboard")
+        except ValueError as e:
+            flash(str(e), "error")
+        else:
+            flash(f"Role '{key}' added, switched off. Upload its CV, check the preview, then turn it on.", "success")
+            return redirect(url_for("role_detail", key=key))
+    return render_template(
+        "role_form.html", active="roles", nav=nav, form=form, role=None, key=None,
+        text_fields=ROLE_TEXT_FIELDS, n_bullets=LETTER_BULLETS,
+    )
+
+
+@app.route("/roles/<key>", methods=["GET", "POST"])
+@login_required
+def role_detail(key):
+    companies, nav = load_data()
+    role, _, saved = _load_role(key)
+    if role is None:
+        flash("No role by that name.", "error")
+        return redirect(url_for("roles"))
+
+    if request.method == "POST":
+        try:
+            def edit(tracks):
+                if key not in tracks:
+                    raise ValueError("That role was removed while you were editing.")
+                tracks[key] = role_from_form(request.form, tracks[key])
+            state_repo.mutate_tracks(edit, f"Edit role '{key}' via dashboard")
+        except ValueError as e:
+            flash(str(e), "error")
+            # Re-render with what was typed rather than losing it.
+            return render_template(
+                "role_form.html", active="roles", nav=nav, form=request.form, role=role, key=key,
+                text_fields=ROLE_TEXT_FIELDS, n_bullets=LETTER_BULLETS,
+            )
+        flash("Role saved. The next send uses it.", "success")
+        return redirect(url_for("role_detail", key=key))
+
+    size = safe_call(state_repo.cv_size, role["cv_path"])
+    # Pre-fill the form from the stored role.
+    form = {f: role.get(f, "") for f, _, _ in ROLE_TEXT_FIELDS}
+    form["highlights"] = "\n".join(role.get("highlights", []))
+    L = role.get("letter") or {}
+    form.update({"letter_intro": L.get("intro", ""), "letter_lead_in": L.get("lead_in", ""),
+                 "letter_closing": L.get("closing", "")})
+    for i, b in enumerate(L.get("bullets", [])[:LETTER_BULLETS], start=1):
+        form[f"bullet_title_{i}"], form[f"bullet_text_{i}"] = b["title"], b["text"]
+    return render_template(
+        "role_form.html", active="roles", nav=nav, form=form, role=role, key=key,
+        text_fields=ROLE_TEXT_FIELDS, n_bullets=LETTER_BULLETS,
+        has_cv=size is not None, cv_kb=max(0.1, round(size / 1024, 1)) if size is not None else None,
+        preview=role_preview(role),
+        queued=sum(1 for c in companies if c["bucket"] == "upcoming" and (c["track"] or "devops") == key),
+    )
+
+
+@app.route("/roles/<key>/active", methods=["POST"])
+@login_required
+def role_active(key):
+    role, _, _ = _load_role(key)
+    if role is None:
+        flash("No role by that name.", "error")
+        return redirect(url_for("roles"))
+    turn_on = request.form.get("active") == "on"
+    if turn_on and state_repo.cv_size(role["cv_path"]) is None:
+        flash("Upload this role's CV first. A role can't send without its own CV.", "error")
+        return redirect(url_for("role_detail", key=key))
+
+    def toggle(tracks):
+        tracks[key]["active"] = turn_on
+    state_repo.mutate_tracks(toggle, f"Turn role '{key}' {'on' if turn_on else 'off'} via dashboard")
+    flash(f"'{key}' is {'on: its queued companies go out with the next send' if turn_on else 'off: its companies wait in the queue'}.", "success")
+    return redirect(url_for("role_detail", key=key))
+
+
+@app.route("/roles/<key>/cv", methods=["POST"])
+@login_required
+def role_cv_upload(key):
+    role, _, _ = _load_role(key)
+    if role is None:
+        flash("No role by that name.", "error")
+        return redirect(url_for("roles"))
     f = request.files.get("cv")
     if not f or not f.filename:
         flash("Choose a PDF file first.", "error")
@@ -877,23 +1132,26 @@ def settings_cv():
         if not data.startswith(b"%PDF-"):
             flash("That doesn't look like a valid PDF file.", "error")
         else:
-            state_repo.save_cv(data, "Update CV via dashboard")
-            flash("CV updated. The next send attaches this version.", "success")
-    return redirect(url_for("settings") + "#cv")
+            state_repo.save_cv(role["cv_path"], data, f"Update '{key}' CV via dashboard")
+            if role.get("active", True):
+                flash("CV updated. The next send attaches this version.", "success")
+            else:
+                flash("CV uploaded. Check the preview below, then turn the role on.", "success")
+    return redirect(url_for("role_detail", key=key) + "#cv")
 
 
-@app.route("/settings/cv/download")
+@app.route("/roles/<key>/cv")
 @login_required
-def cv_download():
-    data, _ = state_repo.get_cv()
+def role_cv_view(key):
+    role, _, _ = _load_role(key)
+    data = state_repo.get_cv(role["cv_path"])[0] if role else None
     if data is None:
-        flash("No CV on file yet.", "error")
-        return redirect(url_for("settings"))
+        flash("No CV uploaded for this role yet.", "error")
+        return redirect(url_for("roles"))
     return Response(
         data, mimetype="application/pdf",
-        headers={"Content-Disposition": "inline; filename=current_cv.pdf"},
+        headers={"Content-Disposition": f"inline; filename=cv_{key}.pdf"},
     )
-
 
 if __name__ == "__main__":
     app.run(debug=True)

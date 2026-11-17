@@ -20,6 +20,10 @@
 !followup_pipeline.py
 !smtp_client.py
 
+# Whitelist the test suite (fakes SMTP and GitHub; no secrets)
+!tests/
+!tests/*.py
+
 # Whitelist the scheduled CI workflows (contain no secrets, only references them)
 !.github/
 !.github/workflows/

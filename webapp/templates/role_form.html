@@ -1,0 +1,108 @@
+{% extends "base_app.html" %}
+{% block title %}{{ key or 'New role' }} · Roles · Outbound{% endblock %}
+{% block page_title %}{% if key %}Role: <span class="mono">{{ key }}</span>{% else %}Add a role{% endif %}{% endblock %}
+{% block page_sub %}
+  {% if not key %}A new role starts switched off. Add its CV and check the preview before you turn it on.
+  {% elif role.get('active', true) and has_cv %}<span class="pill today">sending</span> {{ queued }} compan{{ 'y' if queued == 1 else 'ies' }} queued under this role.
+  {% elif not role.get('active', true) %}<span class="pill later">off</span> Nothing goes out under this role; {{ queued }} compan{{ 'y' if queued == 1 else 'ies' }} waiting.
+  {% else %}<span class="pill fail">held</span> No CV yet, so {{ queued }} compan{{ 'y' if queued == 1 else 'ies' }} wait.
+  {% endif %}
+{% endblock %}
+{% block content %}
+<p class="small" style="margin: -8px 0 18px;"><a href="{{ url_for('roles') }}">&larr; All roles</a></p>
+
+{% if key %}
+<div class="split" style="align-items: start;">
+  <section class="panel card-box" id="cv">
+    <div class="panel-head"><h2>CV for this role</h2></div>
+    <p class="hint">Tailor the title, summary and project order for this role, but keep the facts the same as your other CVs: recruiters compare them with LinkedIn. Recipients always see it as <span class="mono">Your_Name_CV.pdf</span>, whichever role it's for.</p>
+    <div class="row-actions" style="margin-bottom: 14px; align-items: center;">
+      {% if has_cv %}<span class="muted">On file: <span class="mono">{{ cv_kb }} KB</span></span>
+        <a href="{{ url_for('role_cv_view', key=key) }}" target="_blank" rel="noopener" class="btn ghost sm">View CV</a>
+      {% else %}<span class="muted">No CV yet. This role can't send until you upload one.</span>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('role_cv_upload', key=key) }}" enctype="multipart/form-data">
+      <input type="file" name="cv" accept="application/pdf" required aria-label="CV PDF" style="margin-bottom: 12px; color: var(--muted);">
+      <div class="form-actions"><button type="submit" class="sm">{{ 'Replace CV' if has_cv else 'Upload CV' }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel card-box">
+    <div class="panel-head"><h2>Sending</h2></div>
+    {% if role.get('active', true) %}
+      <p class="hint">On. Companies tagged <span class="mono">{{ key }}</span> go out with the daily send{% if not has_cv %}, once a CV is uploaded{% endif %}.</p>
+      <form method="post" action="{{ url_for('role_active', key=key) }}" class="inline"
+            onsubmit="return confirm('Turn {{ key }} off? Its companies stay queued but nothing goes out under it.');">
+        <input type="hidden" name="active" value="off"><button type="submit" class="ghost sm">Turn off</button>
+      </form>
+    {% else %}
+      <p class="hint">Off. Read the preview below first: once on, {{ queued }} queued compan{{ 'y' if queued == 1 else 'ies' }} go out at the next send.</p>
+      <form method="post" action="{{ url_for('role_active', key=key) }}" class="inline">
+        <input type="hidden" name="active" value="on"><button type="submit" class="sm" {{ 'disabled' if not has_cv }}>Turn on</button>
+      </form>
+      {% if not has_cv %}<p class="small muted" style="margin-top:8px">Upload a CV to enable this.</p>{% endif %}
+    {% endif %}
+  </section>
+</div>
+
+<section class="panel card-box" id="preview">
+  <div class="panel-head"><h2>Preview: what {{ preview.company }} would receive</h2></div>
+  <p class="hint">Subject: <b>{{ preview.subject }}</b>. Your signature is added at send time.</p>
+  <pre style="white-space: pre-wrap; font-family: var(--mono); font-size: 13px; line-height: 1.6; margin: 0 0 18px;">{{ preview.body }}</pre>
+  <h3 style="font-size: 14px; margin: 0 0 8px;">Cover letter body</h3>
+  {% if preview.letter %}
+    <div style="max-width: 80ch; font-size: 14px; line-height: 1.6;">
+      <p>{{ preview.letter.intro }}</p>
+      {% if preview.letter.lead_in %}<p>{{ preview.letter.lead_in }}</p>{% endif %}
+      {% for b in preview.letter.bullets %}<p>&bull;&nbsp;&nbsp;<b>{{ b.title }}:</b> {{ b.text }}</p>{% endfor %}
+      <p>{{ preview.letter.closing }}</p>
+    </div>
+  {% else %}
+    <p class="muted">Uses the sector-specific DevOps letters (fintech, bank, consultancy, ISP, startup), chosen by each company's type.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel card-box" id="edit" style="max-width: 900px;">
+  <div class="panel-head"><h2>{{ 'Edit the pitch' if key else 'The pitch' }}</h2></div>
+  <p class="hint">Every claim here has to be something this role's CV backs up. The letter and CV are read side by side.</p>
+  <form method="post">
+    <div class="form-grid">
+      {% if not key %}
+      <div class="full"><label for="key">Short name</label>
+        <input id="key" type="text" name="key" value="{{ form.get('key', '') }}" placeholder="fullstack" required pattern="[a-z0-9][a-z0-9_\-]{0,31}" autofocus>
+        <p class="small muted" style="margin-top:4px">Lowercase, no spaces. Used to tag companies and in searches (<span class="mono">| 10 | fullstack</span>). Can't be changed later.</p></div>
+      {% endif %}
+      {% for field, label, hint in text_fields %}
+      <div class="{{ 'full' if field in ('credentials', 'followup_expertise', 'closing_skills') }}"><label for="{{ field }}">{{ label }}</label>
+        <input id="{{ field }}" type="text" name="{{ field }}" value="{{ form.get(field, '') }}" required>
+        <p class="small muted" style="margin-top:4px">{{ hint }}</p></div>
+      {% endfor %}
+      <div class="full"><label for="highlights">Email highlights (2 to 5, one per line)</label>
+        <textarea id="highlights" name="highlights" rows="7" required>{{ form.get('highlights', '') }}</textarea>
+        <p class="small muted" style="margin-top:4px">Specific and checkable: what you built, with what, and the result. Numbers beat adjectives.</p></div>
+    </div>
+
+    <h3 style="font-size: 14px; margin: 18px 0 4px;">Cover letter</h3>
+    <p class="hint">Write <span class="mono">{company}</span> and <span class="mono">{role}</span> where the company's name and the role title should go.{% if key and role.get('letter') is none %} Leave every letter field empty to keep the sector-specific DevOps letters.{% endif %}</p>
+    <div class="form-grid">
+      <div class="full"><label for="letter_intro">Intro paragraph</label>
+        <textarea id="letter_intro" name="letter_intro" rows="4" placeholder="I am writing to express my strong interest in the {role} position at {company}. ...">{{ form.get('letter_intro', '') }}</textarea></div>
+      <div class="full"><label for="letter_lead_in">Lead-in line (optional)</label>
+        <input id="letter_lead_in" type="text" name="letter_lead_in" value="{{ form.get('letter_lead_in', '') }}" placeholder="Recent work that speaks to the role:"></div>
+      {% for i in range(1, n_bullets + 1) %}
+      <div><label for="bullet_title_{{ i }}">Bullet {{ i }} title{{ ' (optional)' if i > 2 }}</label>
+        <input id="bullet_title_{{ i }}" type="text" name="bullet_title_{{ i }}" value="{{ form.get('bullet_title_' ~ i, '') }}" placeholder="Backend & API Design"></div>
+      <div class="full"><label for="bullet_text_{{ i }}">Bullet {{ i }} text</label>
+        <textarea id="bullet_text_{{ i }}" name="bullet_text_{{ i }}" rows="3">{{ form.get('bullet_text_' ~ i, '') }}</textarea></div>
+      {% endfor %}
+      <div class="full"><label for="letter_closing">Closing paragraph</label>
+        <textarea id="letter_closing" name="letter_closing" rows="3" placeholder="Thank you for your time and consideration. I would welcome the opportunity to discuss how ... can support the team at {company}.">{{ form.get('letter_closing', '') }}</textarea></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit">{{ 'Save role' if key else 'Add role (switched off)' }}</button>
+      <a href="{{ url_for('roles') }}" class="btn ghost">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

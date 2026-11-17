@@ -55,12 +55,13 @@ class EmailSender:
             print(f"[EmailSender] Error: Cover letter path {cover_letter_path} does not exist.")
             return None
 
-        # Attach CV
-        if os.path.exists(cv_path):
+        # Attach CV under one neutral name whichever track's file it is, so the
+        # recipient never sees "cv_software.pdf" and infers other versions exist.
+        if cv_path and os.path.exists(cv_path):
             with open(cv_path, "rb") as f:
                 file_data = f.read()
-                file_name = os.path.basename(cv_path)
-            msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
+            msg.add_attachment(file_data, maintype="application", subtype="pdf",
+                               filename=applicant.CV_ATTACHMENT_NAME)
         else:
             print(f"[EmailSender] Error: CV path {cv_path} does not exist.")
             return None

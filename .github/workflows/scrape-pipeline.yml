@@ -52,12 +52,15 @@ jobs:
             IdentitiesOnly yes
           EOF
 
-      - name: Pull current state (queue, log, searches)
+      - name: Pull current state (queue, log, searches, roles)
         run: |
           git clone state-repo:${STATE_REPO}.git state-repo
           cp state-repo/outreach_queue.csv .
           cp state-repo/outreach_log.csv . || true
           cp state-repo/search_queries.txt . || true
+          # Roles edited on the dashboard; absent until the first save, in
+          # which case applicant.py uses webapp/tracks_default.json.
+          cp state-repo/tracks.json . || true
 
       - name: Search for new candidate companies
         run: python3 outreach_pipeline.py search-all

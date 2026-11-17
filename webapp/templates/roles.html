@@ -1,0 +1,33 @@
+{% extends "base_app.html" %}
+{% block title %}Roles · Outbound{% endblock %}
+{% block page_title %}Roles{% endblock %}
+{% block page_sub %}Each role is one pitch with its own CV, letterhead title, email and cover letter. A company is tagged with one role, and gets that role's CV.{% endblock %}
+{% block content %}
+<section class="panel card-box">
+  <div class="panel-head"><h2>Your roles</h2><span class="count-badge">{{ rows|length }}</span>
+    <a href="{{ url_for('role_new') }}" class="btn sm" style="margin-left:auto">Add a role</a></div>
+  {% if not saved %}<p class="hint">These are the built-in roles. Saving any change copies them into <span class="mono">tracks.json</span> in your state repo, where both this dashboard and the pipeline read them from.</p>{% endif %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Role</th><th>Applies as</th><th>CV</th><th>Status</th><th>Queued</th><th>Sent</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr data-href="{{ url_for('role_detail', key=r.key) }}">
+          <td><a href="{{ url_for('role_detail', key=r.key) }}" class="mono">{{ r.key }}</a></td>
+          <td>{{ r.t.role_title }}</td>
+          <td>{% if r.has_cv %}<span class="pill ok">{{ r.cv_kb }} KB</span>{% else %}<span class="pill fail">missing</span>{% endif %}</td>
+          <td>
+            {% if r.live %}<span class="pill today">sending</span>
+            {% elif not r.t.get('active', true) %}<span class="pill later">off</span>
+            {% else %}<span class="pill fail">held: no CV</span>{% endif %}
+          </td>
+          <td class="num">{{ r.queued }}</td>
+          <td class="num">{{ r.sent }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="callout info">A role only sends when it's on <em>and</em> has its own CV. Otherwise its companies wait in the queue, without using up any of the day's sends, and never go out with another role's CV. To point the scraper at a role, add <span class="mono">| 10 | role</span> to a search in <a href="{{ url_for('settings') }}#queries">Settings</a>.</div>
+</section>
+{% endblock %}

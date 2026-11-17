@@ -14,7 +14,7 @@
         <input id="email" type="text" name="email" value="{{ form.get('email', '') }}" placeholder="careers@company.com"></div>
       <div><label for="company_type">Type (picks the cover letter variant)</label>
         <select id="company_type" name="company_type">{% for t in company_types %}<option value="{{ t }}" {{ 'selected' if t == form.get('company_type', 'general_startup') }}>{{ t }}</option>{% endfor %}</select></div>
-      <div><label for="track">Track (picks the pitch)</label>
+      <div><label for="track">Role (picks the pitch and CV)</label>
         <select id="track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == form.get('track', tracks[0]) }}>{{ t }}</option>{% endfor %}</select></div>
       <div><label for="recipient_name">Addressed to</label>
         <input id="recipient_name" type="text" name="recipient_name" value="{{ form.get('recipient_name', '') }}" placeholder="The Recruiting and Technology Team"></div>

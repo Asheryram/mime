@@ -1,0 +1,92 @@
+{
+  "devops": {
+    "active": true,
+    "cv_path": "YramAsherTettehAbotsi_resume.pdf",
+    "headline": "Cloud & DevOps Engineer",
+    "role_title": "Cloud & DevOps Engineer",
+    "subject_area": "Cloud & DevOps Engineering",
+    "interest_area": "Cloud and DevOps Engineering",
+    "credentials": "a Computer Science graduate of KNUST and a Cloud Engineer who designs and automates AWS infrastructure",
+    "closing_skills": "cloud engineering skills, automation focus, and adaptability",
+    "highlights": [
+      "Building a self-healing AWS system for a Flask microservice using Lambda, CloudWatch, and Amazon Bedrock that detects anomalies and generates AI-driven root-cause reports without manual intervention.",
+      "Provisioning 55 AWS resources through modular Terraform (VPC, EC2, Lambda, EventBridge, SNS) with tfsec security scanning and GitHub Actions CI for fully reproducible infrastructure.",
+      "Cutting infrastructure cost 60% through automated instance scheduling, delivered via Jenkins CI/CD pipelines with full observability (Prometheus, Grafana, Alertmanager, Jaeger).",
+      "Engineering a secure software supply chain and disaster recovery lab with immutable artifacts and cross-region RDS failover, achieving a recovery time objective of 30 minutes or less."
+    ],
+    "followup_expertise": "Infrastructure as Code, CI/CD automation, and cloud cost optimisation",
+    "letter": null
+  },
+  "software": {
+    "active": true,
+    "cv_path": "cv_software.pdf",
+    "headline": "Full-Stack Software Engineer",
+    "role_title": "Software Engineer",
+    "subject_area": "Software Engineering",
+    "interest_area": "Software Engineering",
+    "credentials": "a Computer Science graduate of KNUST and a software engineer who builds backend services and full-stack products",
+    "closing_skills": "backend engineering skills, product focus, and adaptability",
+    "highlights": [
+      "Building an AI assistant backend in NestJS and TypeScript, integrating the Anthropic Claude SDK for intent detection and policy-driven customer conversations, deployed to AWS ECS Fargate.",
+      "Designing a microservices school management system in Node.js with dedicated auth, user, school, communication, and notification services behind an API gateway, orchestrated with Docker Compose.",
+      "Developing a React and Vite frontend that generates client-facing PDF proposals, and refactoring a legacy Python codebase to cut redundancy 50% while improving readability.",
+      "Working across Java, Python, TypeScript, C++, and SQL/NoSQL, with the CI/CD and containerisation background to take a service from commit to production without handing it off."
+    ],
+    "followup_expertise": "backend service design, API development, and shipping features end to end",
+    "letter": {
+      "intro": "I am writing to express my strong interest in the {role} position at {company}. As a Computer Science graduate of KNUST, I build backend services and full-stack products, and I deploy what I build too: the same hands that write the service write its pipeline and its infrastructure.",
+      "lead_in": "Recent work that speaks to the role:",
+      "bullets": [
+        {
+          "title": "Backend & API Design",
+          "text": "I built an AI assistant backend in NestJS and TypeScript, integrating the Anthropic Claude SDK for intent detection and policy-driven customer conversations, backed by Supabase and deployed to AWS ECS Fargate with modular Terraform."
+        },
+        {
+          "title": "Microservices",
+          "text": "I designed a school management system as discrete auth, user, school, communication, and notification services behind an API gateway, orchestrated with Docker Compose and documented as inter-service API contracts rather than tribal knowledge."
+        },
+        {
+          "title": "Full-Stack Delivery",
+          "text": "I developed a React and Vite frontend generating client-facing PDF proposals, and refactored a legacy Python codebase to cut redundancy 50% while improving readability. I work across Java, Python, TypeScript, C++, and SQL/NoSQL as the problem requires."
+        }
+      ],
+      "closing": "Thank you for your time and consideration. I would welcome the opportunity to discuss how my backend engineering skills, product focus, and adaptability can support the engineering team at {company}."
+    }
+  },
+  "sysadmin": {
+    "active": true,
+    "cv_path": "cv_sysadmin.pdf",
+    "headline": "Cloud & Systems Administrator",
+    "role_title": "IT Systems Administrator",
+    "subject_area": "IT and Systems Administration",
+    "interest_area": "IT and Systems Administration",
+    "credentials": "a Computer Science graduate of KNUST and an infrastructure engineer who administers and secures cloud and network systems",
+    "closing_skills": "systems administration skills, security focus, and adaptability",
+    "highlights": [
+      "Provisioning and configuring 10+ AWS services including EC2, S3, IAM, and CloudFormation, designing secure VPCs and IAM roles that cut potential security misconfigurations by 30%.",
+      "Applying Cisco networking fundamentals (subnetting, routing) to production cloud topologies, alongside day-to-day Linux and Bash administration.",
+      "Running monitoring and alerting across Prometheus, Grafana, Alertmanager, and Jaeger, with GuardDuty threat detection, so faults surface before users report them.",
+      "Building and testing disaster recovery with cross-region RDS failover and immutable backups, achieving a recovery time objective of 30 minutes or less."
+    ],
+    "followup_expertise": "cloud and network administration, monitoring, and security hardening",
+    "letter": {
+      "intro": "I am writing to express my strong interest in the {role} position at {company}. As a Computer Science graduate of KNUST working in cloud infrastructure at AmaliTech, I administer and secure the systems people depend on, and I automate the parts that should not need a human twice.",
+      "lead_in": "What I would bring to your systems:",
+      "bullets": [
+        {
+          "title": "Systems & Network Administration",
+          "text": "I have provisioned and configured 10+ AWS services including EC2, S3, IAM, and CloudFormation, designing secure VPCs, subnets, routing, and IAM roles that reduced potential security misconfigurations by 30%, applying Cisco networking fundamentals directly to cloud topologies."
+        },
+        {
+          "title": "Monitoring & Incident Response",
+          "text": "I run Prometheus, Grafana, Alertmanager, and Jaeger for visibility, with GuardDuty threat detection, and built a self-healing system that detects anomalies and generates root-cause reports without manual triage."
+        },
+        {
+          "title": "Backup, Recovery & Cost",
+          "text": "I built and tested disaster recovery with cross-region RDS failover and immutable backups achieving a 30-minute recovery time objective, and cut infrastructure cost 60% through automated instance scheduling."
+        }
+      ],
+      "closing": "Thank you for your time and consideration. I would welcome the opportunity to discuss how my systems administration skills, security focus, and adaptability can support the technology operations at {company}."
+    }
+  }
+}

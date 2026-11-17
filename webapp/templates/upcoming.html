@@ -13,13 +13,14 @@
       <tbody>
         {% for c in rows %}
         <tr data-href="{{ url_for('company_detail', slug=c.slug) }}">
-          <td class="num">{{ loop.index }}</td>
+          <td class="num">{{ c.send_pos or '' }}</td>
           <td>{{ company_link(c) }}</td>
           <td class="mono">{{ c.email }}</td>
           <td class="nowrap">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.host }} &nearr;</a>{% endif %}</td>
           <td class="muted">{{ c.company_type }} &middot; {{ c.track }}</td>
           <td class="nowrap">
-            {% if loop.index <= limit %}<span class="pill today">{{ next_send|when }}</span>
+            {% if c.held %}<a href="{{ url_for('role_detail', key=c.track or 'devops') }}" class="pill later" title="Fix this on the role's page">held: {{ c.held }}</a>
+            {% elif c.send_pos <= limit %}<span class="pill today">{{ next_send|when }}</span>
             {% else %}<span class="pill later">a later day</span>{% endif %}
           </td>
           <td class="nowrap" style="text-align: right;">

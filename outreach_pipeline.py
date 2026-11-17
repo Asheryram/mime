@@ -19,7 +19,6 @@ from smtp_client import GmailAuthError
 QUEUE_FILE = "outreach_queue.csv"
 LOG_FILE = "outreach_log.csv"
 LETTERS_DIR = "generated_letters"
-CV_PATH = applicant.CV_PATH
 
 # Canonical column order for outreach_queue.csv. followup_pipeline imports this
 # so both writers agree on the schema.
@@ -36,8 +35,8 @@ DAILY_SEND_LIMIT = 15
 # companion repo) drives the scheduled scrape. These are used until it exists.
 SEARCH_QUERIES_FILE = "search_queries.txt"
 DEFAULT_SEARCH_QUERIES = [
-    ("cloud and devops engineering companies Accra Ghana", 10),
-    ("fintech and payments companies hiring engineers Ghana", 10),
+    ("cloud and devops engineering companies Accra Ghana", 10, None),
+    ("fintech and payments companies hiring engineers Ghana", 10, None),
 ]
 
 # Initialize services
@@ -288,20 +287,31 @@ def load_search_queries(path=SEARCH_QUERIES_FILE):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            query, _, limit = line.partition("|")
-            query = query.strip()
+            # "query | limit | track"; limit and track are both optional.
+            parts = [p.strip() for p in line.split("|")]
+            query = parts[0]
             if not query:
                 continue
+            limit = parts[1] if len(parts) > 1 else ""
+            track = parts[2].lower() if len(parts) > 2 and parts[2] else None
             try:
-                n = int(limit.strip()) if limit.strip() else 10
+                n = int(limit) if limit else 10
             except ValueError:
                 n = 10
-            queries.append((query, max(1, min(n, 25))))
+            if track and track not in applicant.TRACKS:
+                # Tagging these leads with the default pitch would send the
+                # wrong CV, so skip the line loudly instead.
+                print(f"[Pipeline] Skipping search '{query}': unknown track '{track}'. "
+                      f"Use one of: {', '.join(applicant.TRACKS)}")
+                continue
+            queries.append((query, max(1, min(n, 25)), track))
     return queries or DEFAULT_SEARCH_QUERIES
 
 
-def run_search_all(track=None):
-    for query, limit in load_search_queries():
+def run_search_all():
+    # Each query carries its own track (None = DEFAULT_TRACK), so one scrape
+    # can feed several roles.
+    for query, limit, track in load_search_queries():
         run_exa_search(query, limit, track=track)
 
 
@@ -620,12 +630,26 @@ def run_send_emails():
         print("[Pipeline] No emails marked 'Approved' in queue. Change 'Pending' to 'Approved' in outreach_queue.csv first.")
         return
         
-    to_send = approved[:DAILY_SEND_LIMIT]
-    print(f"[Pipeline] Starting outreach run: sending {len(to_send)} of {len(approved)} approved emails...")
+    # A row whose track is switched off or has no CV is held (stays Approved)
+    # rather than sent with another track's CV. Filtering before the daily cap means held rows
+    # never eat into the day's sends.
+    sendable, held = [], {}
+    for r in approved:
+        reason = applicant.track_hold_reason(r["track"])
+        if reason:
+            held.setdefault(reason, []).append(r["company_name"])
+        else:
+            sendable.append(r)
+    for reason, names in held.items():
+        print(f"[Pipeline] Holding {len(names)} row(s): {reason}. "
+              f"They stay Approved and go out once that's fixed.")
 
-    if not os.path.exists(CV_PATH):
-        print(f"[Pipeline] Aborting: CV not found at '{CV_PATH}'. Set CV_PATH in applicant.py.")
+    if not sendable:
+        print("[Pipeline] Nothing sendable: every approved row is on a held track.")
         return
+
+    to_send = sendable[:DAILY_SEND_LIMIT]
+    print(f"[Pipeline] Starting outreach run: sending {len(to_send)} of {len(approved)} approved emails...")
 
     # Check the login once before touching any row: a bad app password would
     # otherwise mark every company in the batch "Failed" for no fault of theirs.
@@ -665,7 +689,7 @@ def run_send_emails():
                 recipient_email=r["email"],
                 company_name=r["company_name"],
                 cover_letter_path=pdf_path,
-                cv_path=CV_PATH,
+                cv_path=applicant.cv_path_for(r["track"]),
                 role_title=applicant.get_track(r["track"])["role_title"],
                 subject=applicant.subject_for(r["track"]),
                 body=applicant.build_outreach_body(r["company_name"], r["track"])
@@ -748,7 +772,8 @@ Usage: py outreach_pipeline.py [command]
 Commands:
   search    - Search Exa for new tech companies (args: query [limit])
               e.g., py outreach_pipeline.py search "fintech companies in Accra Ghana" 10
-  search-all - Run every search in search_queries.txt (falls back to built-in defaults)
+  search-all - Run every search in search_queries.txt (falls back to built-in defaults).
+              Lines are 'query | limit | track'; track picks the pitch and CV for leads it finds.
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
   auto-approve   - Promote every Pending row with a usable email to Approved (no human review;
               for the scheduled CI pipeline only, not recommended for interactive use)
@@ -781,7 +806,7 @@ if __name__ == "__main__":
                 track = argv[i + 1]
                 del argv[i:i + 2]
             else:
-                print("Usage: --track requires a value (devops | software | sysadmin)")
+                print(f"Usage: --track requires a value ({' | '.join(applicant.TRACKS)})")
                 sys.exit(1)
         if track and track.strip().lower() not in applicant.TRACKS:
             print(f"Unknown track '{track}'. Choose from: {', '.join(applicant.TRACKS)}")

@@ -2,7 +2,7 @@
 
 An end-to-end automated cold job application and follow-up engine for running high-volume, personalized outreach campaigns. It combines semantic web search, contact harvesting, dynamic PDF cover letter generation, and threaded email follow-ups to turn cold job hunting into a repeatable pipeline.
 
-Nothing about the pipeline is specific to software or DevOps roles: the search queries, the pitch, and the letter content are all data, not code. A nursing graduate, an accountant, or a mechanical engineer can run the exact same pipeline for their own field. See [Replicating this for your own field](#-replicating-this-for-your-own-field) below.
+Nothing about the pipeline is specific to software or DevOps roles: the search queries, the pitch, and the letter content are all data, not code. A nursing graduate, an accountant, or a mechanical engineer can run the exact same pipeline for their own field. See [Roles](#-roles-applying-for-several-kinds-of-job-at-once) below.
 
 All personal details live in a single file (`applicant.py`), so **any human user or AI coding agent** can clone the repository, edit one file, add a CV, and run their own campaign.
 
@@ -26,47 +26,33 @@ Three phases, each runnable independently:
 
 ---
 
-## 🎓 Replicating This for Your Own Field
+## 🎓 Roles: Applying for Several Kinds of Job at Once
 
-Everything devops-specific in this repo lives in two files. Replace both and the rest of the pipeline (search, scraping, sending, follow-ups, CI, dashboard) works unchanged for any field.
+A **role** (called a *track* in the code) is one complete pitch: its own CV, letterhead title, cold email, cover letter and follow-up. Each company in the queue is tagged with one role, and gets that role's CV and letter, so one campaign can approach a fintech about DevOps work and a SaaS startup about full-stack work without either letter, or CV, reading generic.
 
-### 1. `applicant.py`: your identity and pitch
+The built-in roles are `devops`, `software` (full-stack) and `sysadmin`. Nothing about the pipeline is specific to software jobs: a nurse or accountant replaces these with their own.
 
-Edit the top-level fields (name, headline, location, LinkedIn/GitHub, CV filename) and the `TRACKS` dictionary. Each track is one pitch for one kind of role:
+### Managing roles
 
-```python
-TRACKS = {
-    "nursing": {
-        "role_title": "Registered Nurse",
-        "subject_area": "Nursing",
-        "interest_area": "clinical nursing",
-        "closing_skills": "patient care experience, clinical judgment, and adaptability",
-        "credentials": "a nursing graduate of <your school> with <N> years of clinical rotation experience",
-        "highlights": [
-            "Four bullets here, each a real, specific, checkable claim your CV backs up.",
-            "...",
-            "...",
-            "...",
-        ],
-    },
-}
-DEFAULT_TRACK = "nursing"
-```
+**On the dashboard (recommended):** the **Roles** page lists each role with its CV and status. *Add a role* opens a form for the pitch (role title, letterhead title, email highlights, cover letter intro / bullets / closing) and a CV upload, with a preview of the exact email a company would receive.
 
-You can rename the keys (`devops`/`software`/`sysadmin`) to whatever fields you're applying across, add as many as you want, or keep just one. **Every highlight must be something your CV can back up.** The cover letter and CV are read side by side, and an unbacked claim is worse than no claim.
+**By hand:** roles live in `tracks.json` in your companion repo, which the dashboard edits and CI copies in before each run. Until it exists, the pipeline uses the shipped defaults in `webapp/tracks_default.json`. The field reference is at the top of the tracks section in `applicant.py`. In letter text, `{company}` and `{role}` are filled in per company.
 
-### 2. `cover_letter_generator.py`: the cover letter body text
+### Guardrails
 
-This is the one place with field-specific prose, and the one place you'll actually edit code rather than data:
+*   **A role sends only when it's switched on *and* its own CV exists.** Otherwise its companies stay `Approved` in the queue (marked *held* on Up next) and don't use up any of the day's sends. They are **never** sent with another role's CV. New roles start switched off.
+*   **Recipients see one CV filename** (`<FILE_SLUG>_CV.pdf`) whichever role's CV is attached, so nobody learns you have several versions.
+*   **Follow-ups re-attach the same role's CV** the original email carried.
+*   **A malformed `tracks.json` fails the run** rather than silently falling back to old pitches.
+*   **Every claim must be one that role's CV backs up.** Tailor each CV's title, summary and project order to the role, but keep the facts identical across them: recruiters compare against LinkedIn.
 
-*   **If you're adding a track beyond the existing three:** write a new method styled like `get_software_paragraphs()` or `get_sysadmin_paragraphs()` (one intro paragraph, a lead-in line, 2 to 3 bullet highlights, a closing paragraph), then add one `elif (track or "").strip().lower() == "your_track_name":` branch in `generate_pdf()` right next to the existing two, calling your new method.
-*   **If you're reusing the `devops` track's slot** (the one with company-type-specific variants: fintech, consultancy, bank, isp, startup), rewrite the bullet content inside `get_template_paragraphs()` for each `company_type` branch. The structure (one intro, one transition line, three bullets, one closing) is a reasonable template for any field; only the sentences themselves are devops-specific.
+### Pointing the scraper at a role
 
-Either way, every paragraph is plain HTML-ish markup ReportLab parses (`<b>`, `&bull;`, `&#160;` for non-breaking spaces). Copy the formatting, replace the words.
+Each line of `search_queries.txt` (dashboard &rarr; Settings) can name a role as a third part: `SaaS startups in Accra | 10 | software`. Leads it finds get that role. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
 
-### 3. Everything else is unaffected
+### The DevOps sector letters
 
-Search queries are plain sentences describing the companies you want. The scheduled scrape reads them from `search_queries.txt` in your companion repo (edit them on the dashboard's Settings page, or by hand: one per line, optional `| N` for the result count); one-off searches run from the command line (`search "fintech startups in Lagos" 10`). Search for whatever companies or employers are relevant to your field instead. `company_type` categories (`fintech`, `consultancy`, `bank`, `isp`, `general_startup`) are also just labels; relabel them for your own sectors if the defaults don't fit, updating the branches in `get_template_paragraphs()` to match.
+The `devops` role has no `letter` in its data (`null`), so it keeps the five sector-specific letters in `get_template_paragraphs()` (fintech, consultancy, bank, isp, general_startup), chosen by each company's `company_type`. To reuse that for another field, rewrite those paragraphs; or give `devops` a `letter` on the dashboard and stop using them.
 
 ---
 
@@ -74,7 +60,9 @@ Search queries are plain sentences describing the companies you want. The schedu
 
 | File | Purpose |
 | :--- | :--- |
-| **`applicant.py`** | 🔴 **Edit this first.** Your name, contact details, CV filename, and pitch. Every other file reads from here. |
+| **`applicant.py`** | 🔴 **Edit this first.** Your name and contact details, plus the loader for your roles (`tracks.json`). Every other file reads from here. |
+| **`webapp/tracks_default.json`** | The built-in roles, used until `tracks.json` is first saved. |
+| **`tests/`** | `python3 -m unittest discover tests`: role CVs, held rows, follow-ups and the dashboard, with SMTP and GitHub faked. |
 | **`outreach_pipeline.py`** | Main CLI orchestrator: search, scrape, generate, send, status, import. |
 | **`followup_pipeline.py`** | Follow-up manager: date eligibility, exclusions, threaded check-ins. |
 | **`email_sender.py`** | Gmail SMTP client with PDF attachments; returns the `Message-ID` for threading. |
@@ -128,11 +116,11 @@ Fill in `.env`:
 
 Phone and contact email live in `.env` rather than `applicant.py` specifically so that `applicant.py` can be committed to a public repository without publishing a personal number and inbox for scrapers to harvest.
 
-### 3. Personalise `applicant.py` and `cover_letter_generator.py`
-Set your name, headline, location, LinkedIn/GitHub, target role(s), and CV filename. The default `TRACKS` are written for a DevOps/Cloud Engineering job search; see [Replicating This for Your Own Field](#-replicating-this-for-your-own-field) above for exactly what to edit if you're applying in a different field.
+### 3. Personalise `applicant.py` and your roles
+Set your name, location, LinkedIn/GitHub and `FILE_SLUG` in `applicant.py`. Then set up your roles, on the dashboard or in `tracks.json` (see [Roles](#-roles-applying-for-several-kinds-of-job-at-once) above). The defaults are written for a DevOps / full-stack / sysadmin job search.
 
-### 4. Add your CV
-Save your master resume as a PDF in the root directory and point `CV_PATH` in `applicant.py` at it. `send` aborts up front if the file is missing.
+### 4. Add your CVs
+One PDF per role, in the root directory, named as that role's `cv_path` (e.g. `cv_software.pdf`). `send` holds any role whose CV is missing rather than sending it with another role's CV.
 
 ### 5. Create the target queue
 ```bash
@@ -204,7 +192,7 @@ Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to t
 ### Setting up your own companion repo
 
 1. Create a new **private** GitHub repo (any name).
-2. Seed it with a header-only `outreach_queue.csv` (copy the header row from `outreach_queue.example.csv`), an empty `outreach_log.csv`, and your CV PDF under the same filename as `CV_PATH` in `applicant.py`.
+2. Seed it with a header-only `outreach_queue.csv` (copy the header row from `outreach_queue.example.csv`), an empty `outreach_log.csv`, and one CV PDF per role, each named as that role's `cv_path` (or upload them later from the dashboard's Roles page).
 3. Generate an SSH key pair (`ssh-keygen -t ed25519 -f state_deploy_key -N ""`), add the public half as a **Deploy key with write access** on that repo (Settings &rarr; Deploy keys), and add the private half as the `STATE_DEPLOY_KEY` secret on *this* repo.
 4. Set the `STATE_REPO` repo variable to `your-username/your-repo-name`.
 
@@ -212,9 +200,9 @@ Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to t
 
 ## 🖥️ Triage Dashboard (optional web app)
 
-`webapp/` is a small hosted Flask app for the parts of the pipeline that genuinely need a human: fixing a scraped company name, supplying an email the scraper missed, reviewing a freshly scraped lead before it's approved, flagging a sent application as replied or bounced, and swapping in a new CV. It's a thin client over the same companion repo the scheduled CI uses, not a second source of truth: the dashboard and the CI both read and write the exact same `outreach_queue.csv`.
+`webapp/` is a small hosted Flask app for the parts of the pipeline that genuinely need a human: fixing a scraped company name, supplying an email the scraper missed, reviewing a freshly scraped lead before it's approved, flagging a sent application as replied or bounced, and managing your roles and their CVs. It's a thin client over the same companion repo the scheduled CI uses, not a second source of truth: the dashboard and the CI both read and write the exact same `outreach_queue.csv`.
 
-Pages: an **Overview** that says what needs you, what goes out next and who owes you a reply; **Needs you** (every stuck lead with its fix inline); **Up next** (what the next send emails); **Awaiting reply**; searchable **Companies** with an edit page for each; **Activity**; and **Settings** (run now, searches, CV). Login is restricted to a single email you set, with first-run password setup and an email-based reset flow (via your existing Gmail credentials, no new email service needed).
+Pages: an **Overview** that says what needs you, what goes out next and who owes you a reply; **Needs you** (every stuck lead with its fix inline); **Up next** (what the next send emails); **Awaiting reply**; searchable **Companies** with an edit page for each; **Activity**; **Roles** (each role's pitch, CV and on/off switch); and **Settings** (run now, searches). Login is restricted to a single email you set, with first-run password setup and an email-based reset flow (via your existing Gmail credentials, no new email service needed).
 
 It also lets you add companies by hand, edit or delete any company, change the scraper's searches, and start a scrape or send immediately instead of waiting for the schedule.
 

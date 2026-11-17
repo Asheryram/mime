@@ -1,6 +1,6 @@
 # Outreach Triage Desk
 
-A small hosted web app for the parts of the [mime](../README.md) job-outreach pipeline that need a human: fixing a scraped company name, supplying a missing email, reviewing a freshly scraped lead before it's approved, flagging a sent application as replied or bounced, and swapping in a new CV.
+A small hosted web app for the parts of the [mime](../README.md) job-outreach pipeline that need a human: fixing a scraped company name, supplying a missing email, reviewing a freshly scraped lead before it's approved, flagging a sent application as replied or bounced, and managing your roles (each with its own pitch and CV).
 
 It's a thin client over the same private companion repo the scheduled GitHub Actions pipeline uses. There's no separate database for the queue itself; the dashboard and the CI read and write the exact same `outreach_queue.csv`, so nothing can drift out of sync between them.
 
@@ -53,7 +53,6 @@ You'll need accounts on three services, all of which have usable free tiers:
 | `GITHUB_TOKEN` | Reads/writes the companion repo, and shows/starts pipeline runs | A **fine-grained PAT**: github.com/settings/personal-access-tokens/new &rarr; Repository access: your companion repo **and** the pipeline repo &rarr; Permissions: Contents = Read and write, Actions = Read and write. Without Actions, everything works except the run status and the Run now buttons |
 | `STATE_REPO` | Which companion repo to use | `your-github-username/your-state-repo`. Only needed if you're not the original repo author |
 | `PIPELINE_REPO` | Which repo holds the two workflows (for run status and Run now) | `your-github-username/your-fork`. Only needed if you're not the original repo author |
-| `CV_FILENAME` | Your CV's filename in the companion repo | Same as `CV_PATH` in `applicant.py`. Only needed if you're not the original repo author |
 | `TURSO_DATABASE_URL` | Your Turso database | `turso db show <name>` or the Turso dashboard |
 | `TURSO_AUTH_TOKEN` | Auth for that database | `turso db tokens create <name>` or the Turso dashboard |
 
@@ -97,7 +96,8 @@ Opens on `http://127.0.0.1:5000`. One known snag: `libsql` (the Turso client) sh
 | Company | `/companies/<name>` | Edit any field or status, quick actions (retry, restore, don't email), history, delete |
 | Add company | `/companies/new` | Add a lead you found yourself. With an email it goes out at the next send; with a website, the next scrape finds the email |
 | Activity | `/activity` | Every email the pipeline sent, and every change to the queue by the pipeline or by you |
-| Settings | `/settings` | Run scrape/send now, edit the scraper's searches, replace your CV |
+| Roles | `/roles` | Add or edit a role (pitch, cover letter, preview), upload its CV, switch it on or off |
+| Settings | `/settings` | Run scrape/send now, edit the scraper's searches (and which role each feeds) |
 
 A shared tab bar with live counts sits under the header on every page.
 

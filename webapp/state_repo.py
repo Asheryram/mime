@@ -1,6 +1,6 @@
 """
 GitHub-API-backed access to the private companion repo (outreach_queue.csv,
-outreach_log.csv, search_queries.txt, the CV) and to the pipeline repo's
+outreach_log.csv, search_queries.txt, tracks.json, one CV per track) and to the pipeline repo's
 Actions runs. Vercel functions are stateless with no persistent disk, so every
 read and write goes over HTTPS to GitHub instead of a local git clone. The
 companion repo stays the single source of truth shared with the scheduled
@@ -10,7 +10,9 @@ import os
 import re
 import csv
 import io
+import json
 import base64
+import copy
 from urllib.parse import urlparse
 
 import requests
@@ -23,7 +25,13 @@ BRANCH = "main"
 QUEUE_PATH = "outreach_queue.csv"
 LOG_PATH = "outreach_log.csv"
 QUERIES_PATH = "search_queries.txt"
-CV_PATH = os.environ.get("CV_FILENAME", "YramAsherTettehAbotsi_resume.pdf")
+TRACKS_PATH = "tracks.json"
+
+# The shipped roles, used until tracks.json is first saved from the dashboard.
+# applicant.py reads this same file, so the pipeline and the dashboard can't
+# disagree about what the defaults are.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tracks_default.json"), encoding="utf-8") as _f:
+    DEFAULT_TRACKS = json.load(_f)
 
 QUEUE_FIELDS = [
     "company_name", "website", "email", "company_type",
@@ -197,14 +205,51 @@ def save_queries_text(text, message):
     _put_file_bytes(QUERIES_PATH, text.encode("utf-8"), sha, message)
 
 
-def get_cv():
-    """Returns (pdf_bytes, sha) for the current CV, or (None, None) if none exists yet."""
-    return _get_file_bytes(CV_PATH)
+# --- Roles (tracks) and their CVs -------------------------------------------
+
+def get_tracks():
+    """Returns (tracks_dict, saved). saved is False while the defaults are in use."""
+    raw, _ = _get_file_bytes(TRACKS_PATH)
+    if raw is None:
+        return copy.deepcopy(DEFAULT_TRACKS), False
+    return json.loads(raw.decode("utf-8")), True
 
 
-def save_cv(pdf_bytes, message):
-    _, sha = _get_file_bytes(CV_PATH)
-    _put_file_bytes(CV_PATH, pdf_bytes, sha, message)
+def mutate_tracks(fn, message, attempts=3):
+    """
+    Read-modify-write tracks.json pinned to the sha we read, like mutate_queue.
+    The first save writes the defaults out, which is what makes them editable.
+    """
+    for attempt in range(attempts):
+        raw, sha = _get_file_bytes(TRACKS_PATH)
+        tracks = json.loads(raw.decode("utf-8")) if raw is not None else copy.deepcopy(DEFAULT_TRACKS)
+        result = fn(tracks)
+        body = (json.dumps(tracks, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        try:
+            _put_file_bytes(TRACKS_PATH, body, sha, message)
+            return result
+        except ConflictError:
+            if attempt == attempts - 1:
+                raise
+
+
+def get_cv(cv_path):
+    """Returns (pdf_bytes, sha) for one track's CV, or (None, None) if not uploaded."""
+    return _get_file_bytes(cv_path)
+
+
+def cv_size(cv_path):
+    """Size in bytes of a track's CV, or None if it isn't there. Metadata only, no download."""
+    r = requests.get(_contents_url(cv_path), headers=_headers(), params={"ref": BRANCH}, timeout=15)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json().get("size")
+
+
+def save_cv(cv_path, pdf_bytes, message):
+    _, sha = _get_file_bytes(cv_path)
+    _put_file_bytes(cv_path, pdf_bytes, sha, message)
 
 
 # --- History and pipeline runs ----------------------------------------------

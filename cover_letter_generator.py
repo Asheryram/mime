@@ -33,47 +33,28 @@ class CoverLetterGenerator:
             "sign": S("Sg", "Helvetica", 10, textColor=self.mid_color, spaceAfter=0)
         }
 
-    def get_software_paragraphs(self, company_name, role_title):
-        """Body for the software engineering track, drawn from the CV's project work."""
-        return [
-            f"I am writing to express my strong interest in the {role_title} position at "
-            f"{company_name}. As a Computer Science graduate of KNUST, I build backend services "
-            f"and full-stack products, and I deploy what I build too: the same hands that write "
-            f"the service write its pipeline and its infrastructure.",
+    @staticmethod
+    def get_track_paragraphs(letter, company_name, role_title):
+        """
+        Body for a track whose letter is data (tracks.json / the dashboard's
+        Roles page): intro, a lead-in line, titled bullets, closing.
 
-            "Recent work that speaks to the role:",
+        Letter text is plain text typed into a form, so it is escaped here
+        before ReportLab parses it as markup. company_name and role_title
+        arrive already escaped from generate_pdf, so they are substituted after.
+        Plain str.replace rather than str.format: a stray brace in the prose
+        must not crash a scheduled send.
+        """
+        def fill(text):
+            return escape(text or "").replace("{company}", company_name).replace("{role}", role_title)
 
-            "<b>&bull;&#160;&#160;Backend &amp; API Design:</b> I built an AI assistant backend in NestJS and TypeScript, integrating the Anthropic Claude SDK for intent detection and policy-driven customer conversations, backed by Supabase and deployed to AWS ECS Fargate with modular Terraform.",
-
-            "<b>&bull;&#160;&#160;Microservices:</b> I designed a school management system as discrete auth, user, school, communication, and notification services behind an API gateway, orchestrated with Docker Compose and documented as inter-service API contracts rather than tribal knowledge.",
-
-            "<b>&bull;&#160;&#160;Full-Stack Delivery:</b> I developed a React and Vite frontend generating client-facing PDF proposals, and refactored a legacy Python codebase to cut redundancy 50% while improving readability. I work across Java, Python, TypeScript, C++, and SQL/NoSQL as the problem requires.",
-
-            f"Thank you for your time and consideration. I would welcome the opportunity to "
-            f"discuss how my backend engineering skills, product focus, and adaptability can "
-            f"support the engineering team at {company_name}.",
-        ]
-
-    def get_sysadmin_paragraphs(self, company_name, role_title):
-        """Body for the IT / systems administration track."""
-        return [
-            f"I am writing to express my strong interest in the {role_title} position at "
-            f"{company_name}. As a Computer Science graduate of KNUST working in cloud "
-            f"infrastructure at AmaliTech, I administer and secure the systems people depend on, "
-            f"and I automate the parts that should not need a human twice.",
-
-            "What I would bring to your systems:",
-
-            "<b>&bull;&#160;&#160;Systems &amp; Network Administration:</b> I have provisioned and configured 10+ AWS services including EC2, S3, IAM, and CloudFormation, designing secure VPCs, subnets, routing, and IAM roles that reduced potential security misconfigurations by 30%, applying Cisco networking fundamentals directly to cloud topologies.",
-
-            "<b>&bull;&#160;&#160;Monitoring &amp; Incident Response:</b> I run Prometheus, Grafana, Alertmanager, and Jaeger for visibility, with GuardDuty threat detection, and built a self-healing system that detects anomalies and generates root-cause reports without manual triage.",
-
-            "<b>&bull;&#160;&#160;Backup, Recovery &amp; Cost:</b> I built and tested disaster recovery with cross-region RDS failover and immutable backups achieving a 30-minute recovery time objective, and cut infrastructure cost 60% through automated instance scheduling.",
-
-            f"Thank you for your time and consideration. I would welcome the opportunity to "
-            f"discuss how my systems administration skills, security focus, and adaptability can "
-            f"support the technology operations at {company_name}.",
-        ]
+        paras = [fill(letter["intro"])]
+        if letter.get("lead_in"):
+            paras.append(fill(letter["lead_in"]))
+        for b in letter.get("bullets", []):
+            paras.append(f"<b>&bull;&#160;&#160;{fill(b['title'])}:</b> {fill(b['text'])}")
+        paras.append(fill(letter["closing"]))
+        return paras
 
     def get_template_paragraphs(self, company_name, role_title, company_type):
         """
@@ -187,7 +168,7 @@ class CoverLetterGenerator:
 
         # Letterhead
         story.append(Paragraph(escape(applicant.FULL_NAME).upper(), styles["name"]))
-        story.append(Paragraph(escape(applicant.HEADLINE), styles["sub"]))
+        story.append(Paragraph(escape(applicant.headline_for(track)), styles["sub"]))
         contact_parts = [
             escape(applicant.PHONE),
             escape(applicant.EMAIL),
@@ -235,15 +216,14 @@ class CoverLetterGenerator:
 
         story.append(Paragraph(f"Dear {escape(salutation_name)},", styles["body"]))
 
-        # Body Paragraphs. The devops track keeps the five sector-specific
-        # variants; the other tracks have one body each, since the pitch is
-        # about the discipline rather than the client's industry.
+        # Body Paragraphs. A track with a "letter" in tracks.json uses it; a
+        # track without one (the original devops track) keeps the five
+        # sector-specific variants below.
+        letter = applicant.get_track(track).get("letter")
         if paragraphs:
             body_paras = paragraphs
-        elif (track or "").strip().lower() == "software":
-            body_paras = self.get_software_paragraphs(company_name, role_title)
-        elif (track or "").strip().lower() == "sysadmin":
-            body_paras = self.get_sysadmin_paragraphs(company_name, role_title)
+        elif letter:
+            body_paras = self.get_track_paragraphs(letter, company_name, role_title)
         else:
             body_paras = self.get_template_paragraphs(company_name, role_title, company_type)
         for p in body_paras:
@@ -254,7 +234,7 @@ class CoverLetterGenerator:
         story.append(Paragraph("Sincerely,", styles["sign"]))
         story.append(Spacer(1, 4))
         story.append(Paragraph(f"<b>{escape(applicant.FULL_NAME)}</b>", styles["sign"]))
-        story.append(Paragraph(escape(applicant.HEADLINE), styles["contact"]))
+        story.append(Paragraph(escape(applicant.headline_for(track)), styles["contact"]))
 
         doc.build(story)
         print(f"[Generator] Generated cover letter PDF at: {output_path}")
