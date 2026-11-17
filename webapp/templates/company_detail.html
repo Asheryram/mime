@@ -25,7 +25,7 @@
           <input id="website" type="text" name="website" value="{{ c.website }}" placeholder="https://company.com"></div>
         <div><label for="company_type">Type (picks the cover letter variant)</label>
           <select id="company_type" name="company_type">{% for t in company_types %}<option value="{{ t }}" {{ 'selected' if t == c.company_type }}>{{ t }}</option>{% endfor %}</select></div>
-        <div><label for="track">Track (picks the pitch)</label>
+        <div><label for="track">Role (picks the pitch and CV)</label>
           <select id="track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == c.track }}>{{ t }}</option>{% endfor %}</select></div>
         <div><label for="recipient_name">Addressed to</label>
           <input id="recipient_name" type="text" name="recipient_name" value="{{ c.recipient_name }}"></div>

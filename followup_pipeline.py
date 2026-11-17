@@ -12,8 +12,6 @@ import applicant
 import smtp_client
 from smtp_client import GmailAuthError
 
-CV_PATH = applicant.CV_PATH
-
 # Wait this many days after the cold email before checking in.
 FOLLOWUP_AFTER_DAYS = 6
 FOLLOWUP_DAILY_LIMIT = 10
@@ -64,6 +62,11 @@ def get_followup_candidates(today=None):
             continue
 
         if sent_date <= threshold_date:
+            # Held, not dropped: it becomes a candidate again once the CV exists.
+            reason = applicant.track_hold_reason(r.get("track"))
+            if reason:
+                print(f"[Followup] Holding '{r['company_name']}': {reason}.")
+                continue
             candidates.append(r)
 
     return candidates
@@ -96,13 +99,17 @@ def send_followup_email(sender_email, password, r, dry_run=False):
         applicant.build_followup_body(company_name, recipient_name, r["date_sent"], track)
     )
 
-    if os.path.exists(CV_PATH):
-        with open(CV_PATH, "rb") as f:
+    # Re-attach the same track's CV the original email carried, never the
+    # default one: a software application must not be chased with a DevOps CV.
+    cv_path = applicant.cv_path_for(track)
+    if cv_path and os.path.exists(cv_path):
+        with open(cv_path, "rb") as f:
             file_data = f.read()
-            file_name = os.path.basename(CV_PATH)
-        msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
+        msg.add_attachment(file_data, maintype="application", subtype="pdf",
+                           filename=applicant.CV_ATTACHMENT_NAME)
     else:
-        print(f"Error: CV file not found at {CV_PATH}")
+        print(f"Skipping follow-up to {company_name}: no CV for track '{track}' "
+              f"(expected {cv_path or 'a known track'}). It goes out once that CV is added.")
         return False
 
     if dry_run:

@@ -51,13 +51,24 @@ jobs:
             IdentitiesOnly yes
           EOF
 
-      - name: Pull current state (queue, log, CV)
+      - name: Pull current state (queue, log, roles, CVs)
         run: |
           git clone state-repo:${STATE_REPO}.git state-repo
           cp state-repo/outreach_queue.csv .
           cp state-repo/outreach_log.csv . || true
-          cv_path="$(python3 -c 'import applicant; print(applicant.CV_PATH)')"
-          cp "state-repo/$cv_path" "$cv_path"
+          # Roles edited on the dashboard; absent until the first save, in
+          # which case applicant.py uses webapp/tracks_default.json. Must be
+          # copied before the CV loop below, which reads cv_path from it.
+          cp state-repo/tracks.json . || true
+          # One CV per track. A missing one is not an error here: send and
+          # follow-up hold that track's rows until it's uploaded.
+          for cv_path in $(python3 -c 'import applicant; print(" ".join(sorted({t["cv_path"] for t in applicant.TRACKS.values()})))'); do
+            if [ -f "state-repo/$cv_path" ]; then
+              cp "state-repo/$cv_path" "$cv_path"
+            else
+              echo "::warning::No CV at $cv_path in the state repo; rows on that track are held until it's added."
+            fi
+          done
 
       - name: Auto-approve clean leads
         run: python3 outreach_pipeline.py auto-approve

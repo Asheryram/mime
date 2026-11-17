@@ -2,7 +2,7 @@
 {% from "_macros.html" import run_status %}
 {% block title %}Settings · Outbound{% endblock %}
 {% block page_title %}Settings{% endblock %}
-{% block page_sub %}Run the pipeline on demand, change what it searches for, and swap your CV.{% endblock %}
+{% block page_sub %}Run the pipeline on demand, change what it searches for, and choose which role each search feeds.{% endblock %}
 {% block content %}
 <section class="panel card-box" id="pipeline">
   <div class="panel-head"><h2>Run the pipeline now</h2></div>
@@ -28,7 +28,7 @@
 
 <section class="panel card-box" id="queries">
   <div class="panel-head"><h2>What the scraper searches for</h2>{% if not queries_saved %}<span class="count-badge">defaults</span>{% endif %}</div>
-  <p class="hint">One search per line, written the way you'd describe the companies you want (industry, location, what they do). Add <span class="mono">| 15</span> to change how many results a search returns (1 to 25, default 10). Each scrape runs every line. Lines starting with <span class="mono">#</span> are ignored.</p>
+  <p class="hint">One search per line, written the way you'd describe the companies you want (industry, location, what they do). Add <span class="mono">| 15</span> to change how many results a search returns (1 to 25, default 10), and a third part to tag what it finds with a role: <span class="mono">SaaS startups in Accra | 10 | software</span>. Without one, leads get the <span class="mono">{{ tracks[0] }}</span> role. Roles: {% for t in tracks %}<span class="mono">{{ t }}</span>{{ ", " if not loop.last }}{% endfor %}. Each scrape runs every line. Lines starting with <span class="mono">#</span> are ignored.</p>
   <form method="post" action="{{ url_for('settings_queries') }}">
     <textarea id="queries" name="queries" rows="8" spellcheck="false" aria-label="Search queries">{{ queries_text }}</textarea>
     <div class="form-actions"><button type="submit">Save searches</button></div>
@@ -36,20 +36,7 @@
 </section>
 
 <section class="panel card-box" id="cv">
-  <div class="panel-head"><h2>Your CV</h2></div>
-  <p class="hint">Attached to every application and follow-up. A new upload is used from the next send on.</p>
-  <div class="row-actions" style="margin-bottom: 16px; align-items: center;">
-    {% if has_cv %}
-      <span class="muted">Current file: <span class="mono">{{ cv_size_kb }} KB</span></span>
-      <a href="{{ url_for('cv_download') }}" target="_blank" rel="noopener" class="btn ghost sm">View current CV</a>
-    {% else %}
-      <span class="muted">No CV on file yet. Nothing can be sent until you upload one.</span>
-    {% endif %}
-  </div>
-  <form method="post" action="{{ url_for('settings_cv') }}" enctype="multipart/form-data">
-    <label for="cv-file">Replace with a new PDF</label>
-    <input type="file" id="cv-file" name="cv" accept="application/pdf" required style="margin-bottom: 14px; color: var(--muted);">
-    <div class="form-actions"><button type="submit">Upload</button></div>
-  </form>
+  <div class="panel-head"><h2>Your CVs</h2></div>
+  <p class="hint">Each role has its own CV now. Upload, view or replace them on <a href="{{ url_for('roles') }}">Roles</a>.</p>
 </section>
 {% endblock %}
