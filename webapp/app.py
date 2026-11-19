@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import smtplib
@@ -1147,6 +1148,7 @@ def role_detail(key):
         has_cv=size is not None, cv_kb=max(0.1, round(size / 1024, 1)) if size is not None else None,
         preview=role_preview(role),
         other_roles=[k for k in current_tracks()[0] if k != key],
+        builtin_differs=builtin_pitch_differs(key, role),
         queued=sum(1 for c in companies if c["bucket"] == "upcoming" and (c["track"] or "devops") == key),
     )
 
@@ -1168,6 +1170,37 @@ def role_active(key):
     state_repo.mutate_tracks(toggle, f"Turn role '{key}' {'on' if turn_on else 'off'} via dashboard")
     flash(f"'{key}' is {'on: its queued companies go out with the next send' if turn_on else 'off: its companies wait in the queue'}.", "success")
     return redirect(url_for("role_detail", key=key))
+
+
+# What "reset to built-in pitch" replaces: the words, not the role's CV,
+# on/off state or keywords (which decide targeting, and you may have tuned).
+PITCH_FIELDS = [f for f, _, _ in ROLE_TEXT_FIELDS] + ["highlights", "letter"]
+
+
+def builtin_pitch_differs(key, role):
+    d = state_repo.DEFAULT_TRACKS.get(key)
+    return bool(d) and any(role.get(f) != d.get(f) for f in PITCH_FIELDS)
+
+
+@app.route("/roles/<key>/reset", methods=["POST"])
+@login_required
+def role_reset(key):
+    if key not in state_repo.DEFAULT_TRACKS:
+        flash("Only built-in roles have a pitch to reset to.", "error")
+        return redirect(url_for("role_detail", key=key))
+
+    def reset(ts):
+        if key not in ts:
+            raise ValueError("That role no longer exists.")
+        for f in PITCH_FIELDS:
+            ts[key][f] = copy.deepcopy(state_repo.DEFAULT_TRACKS[key][f])
+    try:
+        state_repo.mutate_tracks(reset, f"Reset role '{key}' to the built-in pitch via dashboard")
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("roles"))
+    flash("Pitch reset to the built-in version. Your CV, keywords and on/off setting are unchanged.", "success")
+    return redirect(url_for("role_detail", key=key) + "#preview")
 
 
 def _move_companies(from_key, to_key, message):
