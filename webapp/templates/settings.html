@@ -16,7 +16,7 @@
       <div class="pipe-last">Last run: {{ run_status(scrape_run, pipeline_repo) }} &middot; <a href="{{ scrape_url }}" target="_blank" rel="noopener">all runs</a></div>
     </div>
     <div class="pipe-row">
-      <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails everything in Up next (15 max) and due follow-ups. Daily at 09:00; next {{ next_send|when }} UTC.</div></div>
+      <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails everything in Up next (15 max) and due follow-ups. Weekdays at 07:23; next {{ next_send|when }} UTC.</div></div>
       <form method="post" action="{{ url_for('settings_run', which='send') }}" class="inline"
             onsubmit="return confirm('This emails real companies right now. Send everything in Up next?');">
         <button type="submit" class="sm">Send now</button>
@@ -28,7 +28,7 @@
 
 <section class="panel card-box" id="queries">
   <div class="panel-head"><h2>What the scraper searches for</h2>{% if not queries_saved %}<span class="count-badge">defaults</span>{% endif %}</div>
-  <p class="hint">One search per line, written the way you'd describe the companies you want (industry, location, what they do). Add <span class="mono">| 15</span> to change how many results a search returns (1 to 25, default 10), and a third part to tag what it finds with a role: <span class="mono">SaaS startups in Accra | 10 | software</span>. Without one, leads get the <span class="mono">{{ tracks[0] }}</span> role. Roles: {% for t in tracks %}<span class="mono">{{ t }}</span>{{ ", " if not loop.last }}{% endfor %}. Each scrape runs every line. Lines starting with <span class="mono">#</span> are ignored.</p>
+  <p class="hint">One search per line, written the way you'd describe the companies you want (industry, location, what they do). Add <span class="mono">| 15</span> to change how many results a search returns (1 to 25, default 10), and a third part to tag what it finds with a role: <span class="mono">SaaS startups in Accra | 10 | software</span>. Without one, leads get the <span class="mono">{{ tracks[0] }}</span> role. Roles: {% for t in tracks %}<span class="mono">{{ t }}</span>{{ ", " if not loop.last }}{% endfor %}. Each scrape runs 4 of them in turn, so every run looks somewhere new and the whole list is covered about every {{ ((queries_count or 4) / 4) | round(0, "ceil") | int * 6 }} hours. Lines starting with <span class="mono">#</span> are ignored.</p>
   <form method="post" action="{{ url_for('settings_queries') }}">
     <textarea id="queries" name="queries" rows="8" spellcheck="false" aria-label="Search queries">{{ queries_text }}</textarea>
     <div class="form-actions"><button type="submit">Save searches</button></div>

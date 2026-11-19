@@ -1,0 +1,29 @@
+# One search per line: "search | how many results (1-25) | role".
+# The role is only the starting guess: each company still gets the role its
+# own site fits best, and unclear ones wait in Needs you for you to choose.
+# Each scrape runs a few of these in turn (not all), so every run looks
+# somewhere new instead of repeating the same results.
+# Lines starting with # are ignored.
+
+# Full-stack: companies that build their own web and mobile products
+SaaS startups in Accra building web and mobile products | 10 | software
+fintech startups in Ghana with in-house engineering teams | 10 | software
+payment processors and mobile money platforms in Ghana | 10 | software
+e-commerce and online marketplace companies in Ghana | 10 | software
+software development companies and product studios in Accra | 10 | software
+healthtech startups in Ghana | 10 | software
+edtech companies in Ghana | 10 | software
+logistics and delivery technology startups in Ghana | 10 | software
+agritech startups in Ghana | 10 | software
+proptech and insurtech startups in Ghana | 10 | software
+Nigerian fintech companies with remote engineering teams | 10 | software
+pan-African tech startups with offices in Accra | 10 | software
+
+# DevOps / cloud / infrastructure
+cloud and devops engineering companies in Accra | 10 | devops
+cloud consulting and managed cloud services companies in Ghana | 10 | devops
+managed IT services and network infrastructure companies in Ghana | 10 | devops
+internet service providers and telecom companies in Ghana | 10 | devops
+data centre and web hosting providers in Ghana | 10 | devops
+cybersecurity companies in Ghana | 10 | devops
+banks and insurers in Ghana with digital technology teams | 10 | devops

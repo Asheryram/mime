@@ -49,21 +49,18 @@ RESET_TOKEN_MAX_AGE = 3600  # 1 hour
 DAILY_SEND_LIMIT = 15
 SCRAPE_WORKFLOW = "scrape-pipeline.yml"
 SEND_WORKFLOW = "send-pipeline.yml"
-SEND_HOUR_UTC = 9
-SCRAPE_EVERY_HOURS = 6
+SEND_HOUR_UTC, SEND_MINUTE = 7, 23
+SEND_WEEKDAYS = {0, 1, 2, 3, 4}  # Mon-Fri, as in send-pipeline.yml's "23 7 * * 1-5"
+SCRAPE_EVERY_HOURS, SCRAPE_MINUTE = 6, 17
 
 DEFAULT_RECIPIENT = "The Recruiting and Technology Team"
 DEFAULT_ADDRESS = "Accra, Ghana"
 
-# Must match DEFAULT_SEARCH_QUERIES in outreach_pipeline.py: what the scrape
-# workflow uses until search_queries.txt exists in the companion repo.
-DEFAULT_QUERIES_TEXT = """# One search per line. Optional "| N" sets how many results (1-25, default 10),
-# and an optional third "| role" tags what it finds with that role's pitch and CV,
-# e.g.  SaaS startups in Accra | 10 | software
-# Lines starting with # are ignored.
-cloud and devops engineering companies Accra Ghana | 10
-fintech and payments companies hiring engineers Ghana | 10
-"""
+# The shipped searches, shown until you save your own. outreach_pipeline.py
+# reads this same file, so what you see here is what the scrape runs.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "search_queries_default.txt"),
+          encoding="utf-8") as _f:
+    DEFAULT_QUERIES_TEXT = _f.read()
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -78,7 +75,10 @@ def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("authed"):
-            return redirect(url_for("login"))
+            # Keep where you were going (e.g. a Fix link from the review
+            # email), so login lands there instead of on the overview.
+            nxt = request.full_path if request.method == "GET" else ""
+            return redirect(url_for("login", next=nxt.rstrip("?")) if nxt else url_for("login"))
         return view(*args, **kwargs)
     return wrapped
 
@@ -133,7 +133,7 @@ def login():
         pw = request.form.get("password", "")
         if email == ALLOWED_EMAIL and check_password_hash(auth["password_hash"], pw):
             session["authed"] = True
-            return redirect(url_for("overview"))
+            return safe_next("overview")
         flash("Incorrect email or password.", "error")
     return render_template("login.html", email=ALLOWED_EMAIL)
 
@@ -337,6 +337,7 @@ def triage_item(c, tracks=()):
         "type": c["company_type"],
         "track": c["track"] if c["track"] in tracks else (tracks[0] if tracks else ""),
         "tracks": list(tracks),
+        "email_note": c.get("email_note", ""),
         "role_reason": (f"its role '{c['track']}' was removed" if role_missing(c)
                         else c.get("role_reason", "")),
         "added": c["date_added"],
@@ -349,7 +350,7 @@ def triage_item(c, tracks=()):
 
 def safe_next(default_endpoint):
     """Redirect back to the page a form came from, but only to a path on this site."""
-    nxt = request.form.get("next", "")
+    nxt = request.form.get("next") or request.args.get("next", "")
     if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
         return redirect(nxt)
     return redirect(url_for(default_endpoint))
@@ -377,13 +378,18 @@ def utcnow():
 
 def next_scrape_run(now):
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    hours = (now.hour // SCRAPE_EVERY_HOURS + 1) * SCRAPE_EVERY_HOURS
-    return start_of_day + timedelta(hours=hours)
+    slot = start_of_day + timedelta(hours=(now.hour // SCRAPE_EVERY_HOURS) * SCRAPE_EVERY_HOURS,
+                                    minutes=SCRAPE_MINUTE)
+    return slot if slot > now else slot + timedelta(hours=SCRAPE_EVERY_HOURS)
 
 
 def next_send_run(now):
-    today = now.replace(hour=SEND_HOUR_UTC, minute=0, second=0, microsecond=0)
-    return today if today > now else today + timedelta(days=1)
+    run = now.replace(hour=SEND_HOUR_UTC, minute=SEND_MINUTE, second=0, microsecond=0)
+    if run <= now:
+        run += timedelta(days=1)
+    while run.weekday() not in SEND_WEEKDAYS:
+        run += timedelta(days=1)
+    return run
 
 
 def _parse_dt(value):
@@ -881,6 +887,8 @@ def settings():
     return render_template(
         "settings.html", active="settings", nav=nav, tracks=track_keys(),
         queries_text=queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT,
+        queries_count=sum(1 for l in (queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT).splitlines()
+                          if l.strip() and not l.strip().startswith("#")),
         queries_saved=queries_text is not None,
         scrape_run=safe_call(state_repo.latest_run, SCRAPE_WORKFLOW),
         send_run=safe_call(state_repo.latest_run, SEND_WORKFLOW),

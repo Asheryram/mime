@@ -54,13 +54,13 @@ class PickRoleTests(unittest.TestCase):
         role, reason = self.pick(BANK, fallback="devops")
         self.assertEqual(role, "devops")
         self.assertFalse(self.last_clear, "no signal must go to a human, not be sent on a guess")
-        self.assertIn("no clear signal", reason)
+        self.assertIn("doesn't mention any role", reason)
 
     def test_one_keyword_repeated_is_not_enough(self):
         role, reason = self.pick("React. " * 50, fallback="devops")
         self.assertEqual(role, "devops")
         self.assertFalse(self.last_clear)
-        self.assertIn("weak signal", reason)
+        self.assertIn("not enough to be sure", reason)
 
     def test_tie_falls_back(self):
         role, reason = self.pick("We use React, TypeScript, Kubernetes and Terraform.", fallback="guess")
@@ -139,7 +139,7 @@ class ScrapeTaggingTests(InTempDir):
         # The review email lists it, once.
         sent_before = len(fake.sent)
         op.run_notify_needs_review()
-        body = fake.sent[sent_before][1].get_content()
+        body = fake.sent[sent_before][1].get_body(preferencelist=("plain",)).get_content()
         self.assertIn("Unsure Co", body)
         self.assertIn("choose a role", body)
 
@@ -180,7 +180,7 @@ class DashboardKeywordTests(unittest.TestCase):
         self.fake.files["outreach_queue.csv"] = (
             ",".join(state_repo.QUEUE_FIELDS) + "\n"
             + "PayFlow,https://payflow.com,a@payflow.com,fintech,The Team,,Approved,,,,,software,,,,,site mentions react,\n"
-            + "Unsure Co,https://unsure.co,a@unsure.co,general_startup,The Team,,Pending,,,,,devops,,,,,no clear signal on site; pre-selected the default role,yes\n"
+            + "Unsure Co,https://unsure.co,a@unsure.co,general_startup,The Team,,Pending,,,,,devops,,,,,site doesn't mention any role's keywords; pre-selected the default role,yes\n"
         ).encode()
         self.c = webapp.app.test_client()
         with self.c.session_transaction() as s:
@@ -231,7 +231,7 @@ class DashboardChooseRoleTests(DashboardKeywordTests):
     def test_unclear_role_waits_in_needs_you_with_a_picker(self):
         page = self.c.get("/attention").data.decode()
         self.assertIn('"reason": "role"', page)
-        self.assertIn("no clear signal on site", page)
+        self.assertIn("mention any role", page)
         # (Every page embeds all names for the search palette, so look for the table row's link.)
         self.assertNotIn('href="/companies/unsure-co"', self.c.get("/upcoming").data.decode(), "not queued to send")
 

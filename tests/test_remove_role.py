@@ -59,7 +59,7 @@ class PipelineOrphanTests(InTempDir):
         self.assertEqual([to for to, _ in fake.sent], ["a@dev.co"])
         n = len(fake.sent)
         op.run_notify_needs_review()
-        self.assertIn("its role 'sysadmin' was removed", fake.sent[n][1].get_content())
+        self.assertIn("Its role \u201csysadmin\u201d was removed", fake.sent[n][1].get_body(preferencelist=("plain",)).get_content())
 
 
 class DashboardRemoveTests(unittest.TestCase):
