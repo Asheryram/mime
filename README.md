@@ -56,6 +56,16 @@ Each scrape runs **2 of your searches in turn**, not all of them, so every run l
 
 An address is used only if it's on the company's own domain (`hr@hubtel.com` for `hubtel.com.gh` counts) or a free mailbox like Gmail, which small firms often use. Anything else (an applicant-tracking vendor's `contact@manatal.com`, an agency) is not sent to: the company waits in **Needs you** with a note saying what was found. Job aggregators (Expertini, Jooble...) and applicant-tracking systems (Workable, Lever, Manatal...) are skipped as leads.
 
+### Replies and bounces are detected automatically
+
+Before each send and every scrape, `check-inbox` reads the sending Gmail (`SENDER_EMAIL` + `GMAIL_APP_PASSWORD`; IMAP is always on for personal Gmail) and marks companies **replied** or **bounced**, so follow-ups never chase someone who answered and the reply rate is real. It is read-only and headers-only: the mailbox is opened with EXAMINE and fetched with `BODY.PEEK`, so nothing is marked read or moved; only Gmail's own delivery-failure notices are read in full.
+
+- **Reply:** answers one of your emails (or a follow-up), or comes from the company's domain after you wrote (`kofi@hubtel.com` for `careers@hubtel.com.gh`). For a company on Gmail etc., only that exact address counts.
+- **Not a reply:** out-of-office and other auto-replies, and no-reply "thanks for applying" acknowledgements.
+- **Bounce:** a mailer-daemon/postmaster notice naming the address or quoting the email's ID.
+
+Detected marks show as *replied (auto)* with what was found; marks you make by hand are never undone. If the inbox can't be checked, new applications still go out but **follow-ups are skipped** that run. A reply from an unrelated address with a fresh subject (a recruiter's personal Gmail) can't be linked: mark those by hand.
+
 ### The review email
 
 After a scrape, companies that need you arrive in one email, grouped by what each needs (choose a role, find an email, confirm the name), with the evidence and a **Fix** button that opens that company in Needs you. Set a `DASHBOARD_URL` repo Variable if your dashboard isn't at this repo's homepage address.

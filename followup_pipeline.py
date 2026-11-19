@@ -142,6 +142,14 @@ def run_followups(limit=FOLLOWUP_DAILY_LIMIT, dry_run=False):
         print("Error: SENDER_EMAIL or GMAIL_APP_PASSWORD missing from .env.")
         sys.exit(1)
 
+    # The inbox check runs first in CI. If it couldn't run, a reply may be
+    # sitting unseen, and chasing that person would look careless.
+    from outreach_pipeline import INBOX_CHECK_FAILED_FILE
+    if os.path.exists(INBOX_CHECK_FAILED_FILE) and not dry_run:
+        reason = open(INBOX_CHECK_FAILED_FILE).read().strip()
+        print(f"Skipping follow-ups: the inbox couldn't be checked for replies ({reason}).")
+        return
+
     candidates = get_followup_candidates()
     print(f"Found {len(candidates)} total candidates for follow-ups.")
 

@@ -13,6 +13,7 @@ from apify_scraper import ApifyScraper
 from cover_letter_generator import CoverLetterGenerator
 from email_sender import EmailSender
 import applicant
+import inbox_check
 import review_email
 import role_match
 import smtp_client
@@ -29,7 +30,7 @@ QUEUE_FIELDS = [
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
-    "role_reason", "role_review", "email_note"
+    "role_reason", "role_review", "email_note", "reply_note"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -604,6 +605,38 @@ def needs_role_choice(r):
             or (r.get("track") or applicant.DEFAULT_TRACK) not in applicant.TRACKS)
 
 
+# Written when the inbox couldn't be checked; follow-ups refuse to run while
+# it exists, since they'd risk chasing someone whose reply wasn't seen.
+INBOX_CHECK_FAILED_FILE = ".inbox_check_failed"
+
+
+def run_check_inbox():
+    """Mark replies and bounces from the sending inbox (see inbox_check.py)."""
+    user, password = config.get("SENDER_EMAIL"), config.get("GMAIL_APP_PASSWORD")
+    if not user or not password:
+        print("[Inbox] SENDER_EMAIL or GMAIL_APP_PASSWORD missing; skipping the inbox check.")
+        open(INBOX_CHECK_FAILED_FILE, "w").write("missing credentials\n")
+        return
+    queue = load_queue()
+    try:
+        replied, bounced = inbox_check.check_inbox(queue, user, password)
+    except Exception as e:  # login, network, IMAP errors: never fail the whole run
+        print(f"[Inbox] Couldn't check the inbox ({type(e).__name__}: {e}). "
+              f"New applications still go out; follow-ups are skipped this run.")
+        open(INBOX_CHECK_FAILED_FILE, "w").write(f"{type(e).__name__}: {e}\n")
+        return
+    if os.path.exists(INBOX_CHECK_FAILED_FILE):
+        os.remove(INBOX_CHECK_FAILED_FILE)
+    if replied or bounced:
+        save_queue(queue)
+    for name in replied:
+        print(f"[Inbox] Reply detected from {name}: marked replied, no follow-up will be sent.")
+    for name in bounced:
+        print(f"[Inbox] Bounce detected for {name}: marked bounced.")
+    print(f"[Inbox] Checked the inbox: {len(replied)} new repl{'y' if len(replied) == 1 else 'ies'}, "
+          f"{len(bounced)} new bounce{'' if len(bounced) == 1 else 's'}.")
+
+
 def run_auto_approve():
     """
     Promotes every "Pending" row with a usable, scraped email straight to
@@ -883,6 +916,7 @@ Commands:
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
   auto-approve   - Promote every Pending row with a usable email to Approved (no human review;
               for the scheduled CI pipeline only, not recommended for interactive use)
+  check-inbox    - Read the sending Gmail (read-only) and mark replies and bounces automatically
   notify-review  - Email a summary of Review/no-email-found rows that need a human, each only once
   generate  - Compile ReportLab cover letter PDFs for companies with emails in the queue
   send      - Send up to {DAILY_SEND_LIMIT} emails marked 'Approved' via SMTP with CV & Letter attachments
@@ -931,6 +965,8 @@ if __name__ == "__main__":
         run_apify_scrape()
     elif cmd == "auto-approve":
         run_auto_approve()
+    elif cmd == "check-inbox":
+        run_check_inbox()
     elif cmd == "notify-review":
         run_notify_needs_review()
     elif cmd == "generate":

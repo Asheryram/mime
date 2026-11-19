@@ -25,8 +25,8 @@
           <td class="nowrap muted">{{ c.date_sent|day }}</td>
           <td class="nowrap muted">{{ c.date_followup|day if c.date_followup else ("pending" if c.status == "Sent" else "") }}</td>
           <td class="nowrap">
-            {% if c.replied == "yes" %}<span class="pill replied">replied</span>
-            {% elif c.bounced == "yes" %}<span class="pill bounced">bounced</span>
+            {% if c.replied == "yes" %}<span class="pill replied" {% if c.reply_note %}title="{{ c.reply_note }}"{% endif %}>replied{{ ' (auto)' if (c.reply_note or '').startswith('auto-detected') }}</span>
+            {% elif c.bounced == "yes" %}<span class="pill bounced" {% if c.reply_note %}title="{{ c.reply_note }}"{% endif %}>bounced{{ ' (auto)' if (c.reply_note or '').startswith('auto-detected') }}</span>
             {% else %}<span class="pill later">waiting</span>{% endif %}
           </td>
           <td class="nowrap" style="text-align: right;">
@@ -58,7 +58,7 @@
   {% else %}
   <div class="empty">
     {% if show == "open" %}No one is waiting on a reply. Sent emails show up here after each send.
-    {% elif show == "replied" %}No replies marked yet. When someone answers, mark it from "Awaiting reply" so the follow-up doesn't go out.
+    {% elif show == "replied" %}No replies yet. Replies are detected from your inbox every few hours and before each send; mark one here if it came from an address the check can't link to the company.
     {% elif show == "bounced" %}No bounces marked.
     {% else %}Nothing has been sent yet.{% endif %}
   </div>

@@ -67,6 +67,10 @@ jobs:
           # which case applicant.py uses webapp/tracks_default.json.
           cp state-repo/tracks.json . || true
 
+      - name: Mark replies and bounces from the inbox
+        # Every 6 hours, so the dashboard's Replied and reply rate stay current.
+        run: python3 outreach_pipeline.py check-inbox
+
       - name: Search for new candidate companies
         run: python3 outreach_pipeline.py search-all
 

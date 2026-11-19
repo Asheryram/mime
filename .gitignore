@@ -21,6 +21,7 @@
 !smtp_client.py
 !role_match.py
 !review_email.py
+!inbox_check.py
 
 # Whitelist the test suite (fakes SMTP and GitHub; no secrets)
 !tests/
