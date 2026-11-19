@@ -109,11 +109,13 @@ class ScrapeTaggingTests(InTempDir):
         rows = {r["company_name"]: r for r in op.load_queue()}
         self.assertEqual(rows["PayFlow"]["track"], "software")
         self.assertEqual(rows["Nimbus Cloud"]["track"], "devops")
-        self.assertEqual(rows["Savings Bank"]["track"], "devops", "pre-selected guess")
-        self.assertIn("this search's role", rows["Savings Bank"]["role_reason"])
+        # The search was tagged devops and the bank's site points nowhere else,
+        # so the search's role settles it: no question for you.
+        self.assertEqual(rows["Savings Bank"]["track"], "devops")
+        self.assertIn("used this search's role", rows["Savings Bank"]["role_reason"])
         self.assertIn("react", rows["PayFlow"]["role_reason"])
         self.assertEqual(rows["PayFlow"]["role_review"], "")
-        self.assertEqual(rows["Savings Bank"]["role_review"], "yes")
+        self.assertEqual(rows["Savings Bank"]["role_review"], "")
 
     def test_unclear_role_is_never_approved_or_sent_until_chosen(self):
         applicant, op, _ = self.reload_pipeline()
@@ -256,6 +258,73 @@ class DashboardChooseRoleTests(DashboardKeywordTests):
         })
         row = self.queue()["Unsure Co"]
         self.assertEqual((row["track"], row["role_review"], row["role_reason"]), ("devops", "", "set by you"))
+
+
+class SearchRoleSettlesTests(unittest.TestCase):
+    """A tagged search's role decides anything the site doesn't contradict."""
+
+    def pick(self, text, search_role):
+        return role_match.pick_role(text, TRACKS, fallback=search_role or "devops",
+                                    fallback_source="this search's role" if search_role else "the default role",
+                                    search_role=search_role)
+
+    def test_silent_site_takes_the_search_role(self):
+        role, reason, clear = self.pick(BANK, "devops")
+        self.assertEqual((role, clear), ("devops", True))
+        self.assertIn("doesn't point to another role", reason)
+
+    def test_weak_support_for_the_search_role_is_enough(self):
+        role, reason, clear = self.pick("Staff use Microsoft 365 and javascript.", "devops")
+        self.assertEqual((role, clear), ("devops", True))
+
+    def test_site_leaning_elsewhere_still_asks_you(self):
+        role, reason, clear = self.pick("Our React app.", "devops")
+        self.assertEqual((role, clear), ("devops", False))
+        self.assertIn("search is for devops but the site leans software (react)", reason)
+
+    def test_clear_winner_overrides_the_search(self):
+        self.assertEqual(self.pick(FINTECH, "devops")[:2][0], "software")
+
+    def test_tie_goes_to_the_search_and_says_so(self):
+        role, reason, clear = self.pick("React, TypeScript, Kubernetes and Terraform.", "software")
+        self.assertEqual((role, clear), ("software", True))
+        self.assertIn("fits software and devops equally", reason)
+
+    def test_untagged_search_still_asks(self):
+        self.assertFalse(self.pick(BANK, None)[2])
+
+    def test_search_role_that_no_longer_exists_is_ignored(self):
+        self.assertFalse(self.pick(BANK, "sysadmin")[2])
+
+
+class BulkAcceptTests(unittest.TestCase):
+    def setUp(self):
+        DashboardKeywordTests.setUp(self)  # its setup only, not its tests
+        import state_repo
+        F = state_repo.QUEUE_FIELDS
+        def row(**k):
+            return ",".join(k.get(f, "") for f in F)
+        self.fake.files["outreach_queue.csv"] = ("\n".join([",".join(F),
+            row(company_name="Guess Devops", website="https://a.co", email="a@a.co", status="Pending", track="devops",
+                role_review="yes", role_reason="x"),
+            row(company_name="Guess Removed", website="https://b.co", email="b@b.co", status="Pending", track="sysadmin",
+                role_review="yes"),
+            row(company_name="No Email", website="https://c.co", email="no_email_found", status="Skipped", track="devops"),
+        ]) + "\n").encode()
+
+    def test_accepts_only_rows_waiting_on_an_existing_role(self):
+        import state_repo
+        r = self.c.post("/attention/bulk", json={"action": "accept_role",
+                        "slugs": ["guess-devops", "guess-removed", "no-email"]})
+        body = r.get_json()
+        self.assertEqual(body["done"], ["guess-devops"])
+        self.assertIn("2 skipped", body["message"])
+        rows = {x["company_name"]: x for x in state_repo._parse_queue(self.fake.files["outreach_queue.csv"].decode())}
+        self.assertEqual((rows["Guess Devops"]["role_review"], rows["Guess Devops"]["role_reason"]),
+                         ("", "best guess accepted by you"))
+        self.assertEqual(rows["Guess Removed"]["role_review"], "yes")
+        self.assertEqual(rows["No Email"]["status"], "Skipped")
+        self.assertIn('href="/companies/guess-devops"', self.c.get("/upcoming").data.decode())
 
 
 if __name__ == "__main__":

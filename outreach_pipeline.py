@@ -45,7 +45,10 @@ DEFAULT_SEARCH_QUERIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__fil
 # Searches run per scrape. Running every line every 6 hours would re-fetch the
 # same results (Exa is mostly stable for a given query) and pay for it; a few
 # per run, in rotation, means each run looks somewhere new.
-QUERIES_PER_RUN = 4
+# 2 x ~10 results x 4 runs a day is ~80 new companies a day at most, already
+# more than the email lookups (EMAIL_LOOKUPS_PER_RUN x 4) and the weekday send
+# cap can absorb; searching more would only grow the backlog.
+QUERIES_PER_RUN = 2  # keep in step with SEARCHES_PER_RUN in webapp/app.py
 
 # Initialize services
 exa = None
@@ -481,6 +484,7 @@ def run_exa_search(query_str, limit=15, track=None):
             c["text"], applicant.TRACKS,
             fallback=(track or applicant.DEFAULT_TRACK).strip().lower(),
             fallback_source="this search's role" if track else "the default role",
+            search_role=(track or "").strip().lower() or None,
         )
         print(f"[Pipeline] {name}: {'role ' + repr(role) if clear else 'role needs you'} ({role_reason}).")
 
@@ -505,6 +509,9 @@ def run_exa_search(query_str, limit=15, track=None):
     if needs_review:
         print(f"[Pipeline] {needs_review} row(s) need a company name set by hand (status 'Review').")
 
+EMAIL_LOOKUPS_PER_RUN = 10
+
+
 def run_apify_scrape():
     """
     Finds all companies in queue with empty website or empty email, 
@@ -519,9 +526,8 @@ def run_apify_scrape():
         
     print(f"[Pipeline] Found {len(pending)} companies needing email scraping.")
     
-    # We scrape in batches to avoid overwhelming the scraper
-    # Let's take up to 5 URLs to crawl at a time
-    batch = pending[:5]
+    # Crawl a bounded batch per run (Apify bills per page crawled).
+    batch = pending[:EMAIL_LOOKUPS_PER_RUN]
     urls_to_crawl = []
     
     for r in batch:

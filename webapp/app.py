@@ -52,6 +52,7 @@ SEND_WORKFLOW = "send-pipeline.yml"
 SEND_HOUR_UTC, SEND_MINUTE = 7, 23
 SEND_WEEKDAYS = {0, 1, 2, 3, 4}  # Mon-Fri, as in send-pipeline.yml's "23 7 * * 1-5"
 SCRAPE_EVERY_HOURS, SCRAPE_MINUTE = 6, 17
+SEARCHES_PER_RUN = 2  # outreach_pipeline.QUERIES_PER_RUN
 
 DEFAULT_RECIPIENT = "The Recruiting and Technology Team"
 DEFAULT_ADDRESS = "Accra, Ghana"
@@ -548,14 +549,24 @@ def attention_bulk():
     data = request.get_json(silent=True) or {}
     action = data.get("action")
     slugs = set(data.get("slugs") or [])
-    if action not in ("drop", "retry") or not slugs:
+    if action not in ("drop", "retry", "accept_role") or not slugs:
         return jsonify(ok=False, message="Nothing selected."), 400
+
+    known = set(current_tracks()[0])
 
     def fn(rows):
         done = []
         for r in rows:
             slug = state_repo.slugify(r["company_name"])
             if slug not in slugs:
+                continue
+            if action == "accept_role":
+                # Keep the pre-selected role. Only rows waiting on a role, and
+                # only if that role still exists (a removed one must be picked).
+                if is_yes(r.get("role_review")) and r["track"] in known:
+                    r["role_review"] = ""
+                    r["role_reason"] = "best guess accepted by you"
+                    done.append(slug)
                 continue
             if action == "drop":
                 r["status"] = "Rejected"
@@ -565,8 +576,14 @@ def attention_bulk():
                 done.append(slug)
         return done
 
-    done = state_repo.mutate_queue(fn, f"{'Drop' if action == 'drop' else 'Retry'} {len(slugs)} leads via dashboard")
-    if action == "drop":
+    verb = {"drop": "Drop", "retry": "Retry", "accept_role": "Accept best-guess role for"}[action]
+    done = state_repo.mutate_queue(fn, f"{verb} {len(slugs)} leads via dashboard")
+    if action == "accept_role":
+        skipped = len(slugs) - len(done)
+        message = (f"Kept the best-guess role for {len(done)}. They rejoin the queue."
+                   + (f" {skipped} skipped: only companies waiting on a role whose guess still exists can be accepted."
+                      if skipped else ""))
+    elif action == "drop":
         message = f"Dropped {len(done)}. They won't be emailed."
     else:
         message = f"{len(done)} will be retried at the next send." + ("" if len(done) == len(slugs) else " Only failed sends can be retried.")
@@ -887,6 +904,7 @@ def settings():
     return render_template(
         "settings.html", active="settings", nav=nav, tracks=track_keys(),
         queries_text=queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT,
+        searches_per_run=SEARCHES_PER_RUN,
         queries_count=sum(1 for l in (queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT).splitlines()
                           if l.strip() and not l.strip().startswith("#")),
         queries_saved=queries_text is not None,
