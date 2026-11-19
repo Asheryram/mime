@@ -28,9 +28,9 @@ jobs:
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       APPLICANT_EMAIL: ${{ secrets.APPLICANT_EMAIL }}
-      # Your dashboard's address, for the "Fix" links in the review email. Set
-      # a DASHBOARD_URL repo Variable if yours differs from this repo's homepage.
-      DASHBOARD_URL: ${{ vars.DASHBOARD_URL || 'https://webapp-green-nine-47.vercel.app' }}
+      # Your dashboard's address, for the "Fix" links in the review email. A
+      # DASHBOARD_URL repo Variable overrides it (e.g. for a fork).
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL || 'https://sage-apply.vercel.app' }}
     steps:
       - name: Check out pipeline code
         uses: actions/checkout@v4
