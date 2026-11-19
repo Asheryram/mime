@@ -27,6 +27,7 @@
       <div class="tlist-head">
         <label class="check"><input type="checkbox" id="t-all" aria-label="Select all shown"> <span id="t-count"></span></label>
         <div class="bulk" id="t-bulk" hidden>
+          <button type="button" class="sm ghost" id="t-bulk-accept" title="Keep each one's pre-selected role">Accept best guess</button>
           <button type="button" class="sm ghost" id="t-bulk-retry">Retry</button>
           <button type="button" class="sm danger" id="t-bulk-drop">Drop</button>
         </div>
@@ -128,7 +129,7 @@
         box,
         h("span", { class: "t-name", text: i.name }),
         h("span", { class: "t-meta" }, [
-          h("span", { class: "reason " + i.reason, text: REASONS[i.reason].short }),
+          h("span", { class: "reason " + i.reason, text: i.reason === "role" && i.tracks.indexOf(i.track) !== -1 ? "Guess: " + i.track : REASONS[i.reason].short }),
           i.host ? h("span", { class: "mono", text: "· " + i.host }) : null
         ])
       ]);
@@ -146,6 +147,8 @@
     else els.count.textContent = shown().length + (shown().length === 1 ? " lead" : " leads");
     var anyFailed = Object.keys(checked).some(function (s) { var i = bySlug(s); return i && i.reason === "failed"; });
     document.getElementById("t-bulk-retry").hidden = !anyFailed;
+    var anyRole = Object.keys(checked).some(function (s) { var i = bySlug(s); return i && i.reason === "role"; });
+    document.getElementById("t-bulk-accept").hidden = !anyRole;
   }
 
   function field(id, label, input, sugg) {
@@ -322,6 +325,7 @@
   }
   document.getElementById("t-bulk-drop").addEventListener("click", function () { bulk("drop"); });
   document.getElementById("t-bulk-retry").addEventListener("click", function () { bulk("retry"); });
+  document.getElementById("t-bulk-accept").addEventListener("click", function () { bulk("accept_role"); });
   els.all.addEventListener("change", function () {
     shown().forEach(function (i) { if (els.all.checked) checked[i.slug] = true; else delete checked[i.slug]; });
     renderList();

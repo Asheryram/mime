@@ -50,7 +50,7 @@ The built-in roles are `devops` (cloud, DevOps, and the systems/network administ
 
 ### Searches
 
-Each scrape runs **4 of your searches in turn**, not all of them, so every run looks somewhere new (the same search mostly returns the same results) and Exa costs stay flat. With the 19 shipped searches the whole list is covered about every day and a quarter. Searches use Exa's company index, so results are company homepages rather than articles or job boards. The shipped list is `webapp/search_queries_default.txt`; save your own from **Settings** and it replaces it.
+Each scrape runs **2 of your searches in turn**, not all of them, so every run looks somewhere new (the same search mostly returns the same results) and Exa costs stay flat, and looks up emails for up to 10 companies. With the 19 shipped searches the whole list is covered about every two and a half days. That is already more new companies than 15 sends a weekday can use, so add searches for variety rather than volume. Banks and telecoms are left out on purpose: their sites rarely show what tech they run, and cold email to them reaches customer care. Searches use Exa's company index, so results are company homepages rather than articles or job boards. The shipped list is `webapp/search_queries_default.txt`; save your own from **Settings** and it replaces it.
 
 ### Emails the scraper won't use
 
@@ -64,7 +64,9 @@ After a scrape, companies that need you arrive in one email, grouped by what eac
 
 The scraper reads each company's page and gives it the role whose **keywords** it mentions most (`role_match.py`). Each role's keywords are editable on its dashboard page, e.g. `react, node.js, saas` for full-stack or `kubernetes, terraform, aws` for DevOps. A role wins only with a clear lead: at least 2 different keywords, and more than any other role. One word repeated many times doesn't count, and partial words don't match (`laws` is not `aws`).
 
-**Otherwise you decide.** The company waits in **Needs you** under *Choose a role*, with the search's role (or the default) pre-selected as a best guess and the reason it's unsure. It is never auto-approved or sent until you pick one (on Needs you, or by saving its page), and the review email lists it. Searches can still carry a role as that best guess. Each line of `search_queries.txt` (dashboard &rarr; Settings) can name one as a third part: `SaaS startups in Accra | 10 | software`. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
+**Otherwise the search's role settles it** (`| software` on the search line), unless the site leans to a *different* role. A bank found by a DevOps search whose site says nothing about tech goes out as DevOps; a company found by a DevOps search whose site only mentions React is a conflict.
+
+**Conflicts, and companies from untagged searches with no clear fit, wait for you** in **Needs you** under *Choose a role*, with a best guess pre-selected and the reason it's unsure. They're never auto-approved or sent until you pick one (on Needs you, by saving the company's page, or by selecting several and pressing **Accept best guess**), and the review email lists them. Each line of `search_queries.txt` (dashboard &rarr; Settings) can name one as a third part: `SaaS startups in Accra | 10 | software`. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
 
 Every company records why it got its role (`role_reason`, e.g. *site mentions react, typescript*, or *site doesn't mention any role's keywords; pre-selected this search's role* for one waiting on you). This shows on its page and on Up next, where you can change it before the send; your change is recorded as *set by you*. Companies already in the queue keep their current role.
 

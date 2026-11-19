@@ -1,8 +1,8 @@
 # One search per line: "search | how many results (1-25) | role".
 # The role is only the starting guess: each company still gets the role its
 # own site fits best, and unclear ones wait in Needs you for you to choose.
-# Each scrape runs a few of these in turn (not all), so every run looks
-# somewhere new instead of repeating the same results.
+# Each scrape runs 2 of these in turn (not all), so every run looks somewhere
+# new instead of repeating the same results.
 # Lines starting with # are ignored.
 
 # Full-stack: companies that build their own web and mobile products
@@ -19,11 +19,12 @@ proptech and insurtech startups in Ghana | 10 | software
 Nigerian fintech companies with remote engineering teams | 10 | software
 pan-African tech startups with offices in Accra | 10 | software
 
-# DevOps / cloud / infrastructure
+# DevOps / cloud / infrastructure. No banks or telecoms: their sites rarely
+# show what tech they run, and cold email reaches customer care, not hiring.
+startups in Ghana and Nigeria running their products on AWS, Azure or Google Cloud | 10 | devops
+African SaaS and fintech companies with platform or infrastructure teams | 10 | devops
 cloud and devops engineering companies in Accra | 10 | devops
 cloud consulting and managed cloud services companies in Ghana | 10 | devops
 managed IT services and network infrastructure companies in Ghana | 10 | devops
-internet service providers and telecom companies in Ghana | 10 | devops
 data centre and web hosting providers in Ghana | 10 | devops
 cybersecurity companies in Ghana | 10 | devops
-banks and insurers in Ghana with digital technology teams | 10 | devops

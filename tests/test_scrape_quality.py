@@ -124,12 +124,24 @@ class SearchRotationTests(unittest.TestCase):
         t0 = datetime(2026, 11, 19, 0, 17, tzinfo=timezone.utc)
         seen, previous = set(), None
         for k in range(5):  # ceil(19 / 4) runs
-            batch = self.op.queries_for_this_run(qs, now=t0 + timedelta(hours=6 * k))
+            batch = self.op.queries_for_this_run(qs, now=t0 + timedelta(hours=6 * k), per_run=4)
             self.assertEqual(len(batch), 4)
             self.assertNotEqual(batch, previous)
             previous = batch
             seen.update(q for q, _, _ in batch)
         self.assertEqual(len(seen), 19)
+
+    def test_default_volume(self):
+        import app as webapp
+        self.assertEqual(self.op.QUERIES_PER_RUN, 2)
+        self.assertEqual(webapp.SEARCHES_PER_RUN, self.op.QUERIES_PER_RUN, "dashboard text must match")
+        self.assertEqual(self.op.EMAIL_LOOKUPS_PER_RUN, 10)
+
+    def test_no_bank_or_telecom_searches(self):
+        with open(self.op.DEFAULT_SEARCH_QUERIES_FILE) as f:
+            lines = [l.lower() for l in f if l.strip() and not l.startswith("#")]
+        for word in ("bank", "telecom", "internet service provider", "insurer"):
+            self.assertFalse(any(word in l for l in lines), word)
 
     def test_short_lists_run_whole(self):
         qs = [("a", 10, None), ("b", 10, None)]
