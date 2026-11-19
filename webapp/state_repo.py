@@ -38,7 +38,7 @@ QUEUE_FIELDS = [
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
-    "role_reason", "role_review", "email_note",
+    "role_reason", "role_review", "email_note", "reply_note",
 ]
 
 

@@ -74,6 +74,11 @@ jobs:
             fi
           done
 
+      - name: Mark replies and bounces from the inbox
+        # Before anything is sent: a follow-up must never chase someone who
+        # already replied. Read-only, headers only (see inbox_check.py).
+        run: python3 outreach_pipeline.py check-inbox
+
       - name: Auto-approve clean leads
         run: python3 outreach_pipeline.py auto-approve
 

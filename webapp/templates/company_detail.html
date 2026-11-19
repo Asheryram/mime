@@ -37,6 +37,7 @@
         <div style="padding-top: 22px;">
           <label class="check"><input type="checkbox" name="replied" {{ 'checked' if c.replied == 'yes' }}> They replied</label>
           <label class="check"><input type="checkbox" name="bounced" {{ 'checked' if c.bounced == 'yes' }}> Email bounced</label>
+          {% if c.reply_note %}<p class="small muted" style="margin-top:4px">{{ c.reply_note[0]|upper }}{{ c.reply_note[1:] }}</p>{% endif %}
         </div>
       </div>
       <div class="callout info">Approved or Pending with an email goes out at the next send. Rejected is never emailed. Sent and Followup-Sent are set by the pipeline; change them only to correct a mistake.</div>
