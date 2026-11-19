@@ -139,5 +139,49 @@ class DashboardRemoveTests(unittest.TestCase):
         self.assertEqual(self.rows()["Sys Pending"]["track"], "devops")
 
 
+class ResetPitchTests(DashboardRemoveTests):
+    def test_saved_old_pitch_can_be_reset_keeping_cv_keywords_and_state(self):
+        tracks = json.loads(json.dumps(self.sr.DEFAULT_TRACKS))
+        old = tracks["software"]
+        old.update({"highlights": ["old claim one", "old claim two"], "role_title": "Software Engineer",
+                    "keywords": ["react", "my-own-keyword"], "active": False})
+        self.fake.files["tracks.json"] = json.dumps(tracks).encode()
+        self.fake.files["outreach_queue.csv"] = queue_csv(self.sr, [])
+
+        page = self.c.get("/roles/software").data.decode()
+        self.assertIn("differs from the built-in one", page)
+        self.c.post("/roles/software/reset")
+        saved = json.loads(self.fake.files["tracks.json"])["software"]
+        builtin = self.sr.DEFAULT_TRACKS["software"]
+        self.assertEqual(saved["highlights"], builtin["highlights"])
+        self.assertEqual(saved["letter"], builtin["letter"])
+        self.assertEqual(saved["role_title"], "Full-Stack Engineer")
+        self.assertEqual(saved["keywords"], ["react", "my-own-keyword"], "keywords untouched")
+        self.assertIs(saved["active"], False, "on/off untouched")
+        self.assertEqual(saved["cv_path"], builtin["cv_path"])
+        self.assertNotIn("differs from the built-in one", self.c.get("/roles/software").data.decode())
+
+    def test_custom_role_has_no_reset(self):
+        tracks = json.loads(json.dumps(self.sr.DEFAULT_TRACKS))
+        tracks["platform"] = dict(tracks["devops"], cv_path="cv_platform.pdf")
+        self.fake.files["tracks.json"] = json.dumps(tracks).encode()
+        self.fake.files["outreach_queue.csv"] = queue_csv(self.sr, [])
+        self.assertNotIn("Reset to built-in pitch", self.c.get("/roles/platform").data.decode())
+        self.c.post("/roles/platform/reset")
+        self.assertEqual(json.loads(self.fake.files["tracks.json"])["platform"]["highlights"],
+                         tracks["devops"]["highlights"])
+
+
+class SoftwarePitchMatchesCvTests(unittest.TestCase):
+    """Claims dropped because the full-stack CV doesn't back them."""
+    def test_no_unbacked_claims(self):
+        with open(os.path.join(ROOT, "webapp", "tracks_default.json")) as f:
+            t = json.load(f)["software"]
+        text = json.dumps(t)
+        import re
+        for claim in (r"legacy Python", r"50%", r"\bJava\b(?!Script)", r"C\+\+", r"API gateway", r"designed a school"):
+            self.assertIsNone(re.search(claim, text), claim)
+
+
 if __name__ == "__main__":
     unittest.main()

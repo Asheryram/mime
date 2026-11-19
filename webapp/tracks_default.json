@@ -63,19 +63,20 @@
   "software": {
     "active": true,
     "cv_path": "cv_software.pdf",
-    "headline": "Full-Stack Software Engineer",
-    "role_title": "Software Engineer",
-    "subject_area": "Software Engineering",
-    "interest_area": "Software Engineering",
-    "credentials": "a Computer Science graduate of KNUST and a software engineer who builds backend services and full-stack products",
-    "closing_skills": "backend engineering skills, product focus, and adaptability",
+    "headline": "Full-Stack JavaScript Engineer",
+    "role_title": "Full-Stack Engineer",
+    "subject_area": "Full-Stack Engineering",
+    "interest_area": "full-stack engineering",
+    "credentials": "a Computer Science graduate of KNUST and a full-stack JavaScript engineer who has shipped React and Node.js applications to production for paying clients",
+    "closing_skills": "full-stack delivery, product focus, and ability to run what I build",
     "highlights": [
-      "Building an AI assistant backend in NestJS and TypeScript, integrating the Anthropic Claude SDK for intent detection and policy-driven customer conversations, deployed to AWS ECS Fargate.",
-      "Designing a microservices school management system in Node.js with dedicated auth, user, school, communication, and notification services behind an API gateway, orchestrated with Docker Compose.",
-      "Developing a React and Vite frontend that generates client-facing PDF proposals, and refactoring a legacy Python codebase to cut redundancy 50% while improving readability.",
-      "Working across Java, Python, TypeScript, C++, and SQL/NoSQL, with the CI/CD and containerisation background to take a service from commit to production without handing it off."
+      "Building, as sole engineer, a live data-bundle reseller platform: a React + TypeScript storefront with agent and admin dashboards, and a NestJS, Prisma, and PostgreSQL API with Paystack payments, customer wallets, and four-tier margin splits stored as integer pesewas.",
+      "Adding reliability tooling for real money in flight on that platform: background sweeps that recover lost payment webhooks, stuck-order alerts, refunds, withdrawals, and float-risk reporting.",
+      "Building authentication, real-time chat (Socket.IO), the news feed, and notifications for Diaspora Connect, a live Next.js social platform working against a GraphQL API, and cutting search request volume by about half.",
+      "Reducing page load time by about 40% through code splitting and lazy loading in a React pharmacy management system, with Redux Toolkit state and Cypress end-to-end tests.",
+      "Deploying and running what I build, with Docker, CI/CD, and Terraform on AWS ECS Fargate from my work as a Cloud Engineer at AmaliTech."
     ],
-    "followup_expertise": "backend service design, API development, and shipping features end to end",
+    "followup_expertise": "React, Node.js and NestJS, payments integration, and shipping production features end to end",
     "keywords": [
       "react",
       "next.js",
@@ -104,23 +105,23 @@
       "product engineering"
     ],
     "letter": {
-      "intro": "I am writing to express my strong interest in the {role} position at {company}. As a Computer Science graduate of KNUST, I build backend services and full-stack products, and I deploy what I build too: the same hands that write the service write its pipeline and its infrastructure.",
+      "intro": "I am writing to express my strong interest in the {role} position at {company}. I am a full-stack JavaScript engineer with about three years of React and two and a half years of Node.js, and I have shipped React and Node.js applications to production for paying clients. My cloud background means I can also deploy and run what I build.",
       "lead_in": "Recent work that speaks to the role:",
       "bullets": [
         {
-          "title": "Backend & API Design",
-          "text": "I built an AI assistant backend in NestJS and TypeScript, integrating the Anthropic Claude SDK for intent detection and policy-driven customer conversations, backed by Supabase and deployed to AWS ECS Fargate with modular Terraform."
+          "title": "Payments & Production Systems",
+          "text": "As sole engineer on a live data-bundle reseller platform, I designed, built, and deployed a React + TypeScript storefront and dashboards and a NestJS, Prisma, and PostgreSQL API integrating Paystack, with customer wallets, four-tier margin splits stored as integer pesewas, and background sweeps that recover lost payment webhooks."
         },
         {
-          "title": "Microservices",
-          "text": "I designed a school management system as discrete auth, user, school, communication, and notification services behind an API gateway, orchestrated with Docker Compose and documented as inter-service API contracts rather than tribal knowledge."
+          "title": "Frontend Engineering",
+          "text": "On Diaspora Connect, a live Next.js social platform, I was one of two main frontend contributors: I built authentication end to end, real-time chat with Socket.IO, the news feed, and notifications against a GraphQL API, and cut search request volume by about half."
         },
         {
-          "title": "Full-Stack Delivery",
-          "text": "I developed a React and Vite frontend generating client-facing PDF proposals, and refactored a legacy Python codebase to cut redundancy 50% while improving readability. I work across Java, Python, TypeScript, C++, and SQL/NoSQL as the problem requires."
+          "title": "Shipping End to End",
+          "text": "I built a booking platform with a React 18 site, a NestJS API with role-based permissions on Supabase and PostgreSQL, and a catalogue-grounded AI assistant using the Anthropic Claude SDK, deployed with Terraform to AWS ECS Fargate."
         }
       ],
-      "closing": "Thank you for your time and consideration. I would welcome the opportunity to discuss how my backend engineering skills, product focus, and adaptability can support the engineering team at {company}."
+      "closing": "Thank you for your time and consideration. I would welcome the opportunity to discuss how my full-stack delivery, product focus, and ability to run what I build can support the engineering team at {company}."
     }
   }
 }

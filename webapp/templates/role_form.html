@@ -45,6 +45,17 @@
   </section>
 </div>
 
+{% if builtin_differs %}
+<section class="panel card-box" id="reset" style="border-color: var(--accent);">
+  <div class="panel-head"><h2>Your saved pitch differs from the built-in one</h2></div>
+  <p class="hint">The built-in <span class="mono">{{ key }}</span> pitch has been updated since you saved this role, or you've edited it. Resetting replaces the titles, highlights, follow-up wording and cover letter with the built-in version. Your CV, keywords and on/off setting stay as they are. Edits you made to the wording will be lost.</p>
+  <form method="post" action="{{ url_for('role_reset', key=key) }}" class="inline"
+        onsubmit="return confirm('Replace this role\'s wording with the built-in pitch?');">
+    <button type="submit" class="sm">Reset to built-in pitch</button>
+  </form>
+</section>
+{% endif %}
+
 <section class="panel card-box" id="preview">
   <div class="panel-head"><h2>Preview: what {{ preview.company }} would receive</h2></div>
   <p class="hint">Subject: <b>{{ preview.subject }}</b>. Your signature is added at send time.</p>
