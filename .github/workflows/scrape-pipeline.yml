@@ -3,7 +3,9 @@ name: Scrape new leads
 on:
   schedule:
     # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
-    - cron: "0 */6 * * *"
+    # Every 6 hours at :17, off the hour so GitHub doesn't delay it.
+    # Keep in step with SCRAPE_* in webapp/app.py.
+    - cron: "17 */6 * * *"
   workflow_dispatch: {}
 
 # Shared with send-pipeline.yml so the two never run at once (e.g. a "Run now"
@@ -26,6 +28,9 @@ jobs:
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       APPLICANT_EMAIL: ${{ secrets.APPLICANT_EMAIL }}
+      # Your dashboard's address, for the "Fix" links in the review email. Set
+      # a DASHBOARD_URL repo Variable if yours differs from this repo's homepage.
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL || 'https://webapp-green-nine-47.vercel.app' }}
     steps:
       - name: Check out pipeline code
         uses: actions/checkout@v4

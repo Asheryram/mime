@@ -3,7 +3,11 @@ name: Daily send pipeline
 on:
   schedule:
     # 09:00 UTC = 9am in Accra (GMT, no DST)
-    - cron: "0 9 * * *"
+    # 07:23 UTC (= Accra) on weekdays. Off the hour on purpose: GitHub delays
+    # top-of-the-hour schedules when busy, and "0 9" was running at ~18:00,
+    # landing applications after work. Weekends are skipped: a cold email sent
+    # Saturday sits under Monday's pile. Keep in step with SEND_* in webapp/app.py.
+    - cron: "23 7 * * 1-5"
   workflow_dispatch: {}
 
 # Shared with scrape-pipeline.yml so the two never run at once (e.g. a "Run now"

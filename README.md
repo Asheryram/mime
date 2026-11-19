@@ -48,13 +48,25 @@ The built-in roles are `devops` (cloud, DevOps, and the systems/network administ
 *   **A malformed `tracks.json` fails the run** rather than silently falling back to old pitches.
 *   **Every claim must be one that role's CV backs up.** Tailor each CV's title, summary and project order to the role, but keep the facts identical across them: recruiters compare against LinkedIn.
 
+### Searches
+
+Each scrape runs **4 of your searches in turn**, not all of them, so every run looks somewhere new (the same search mostly returns the same results) and Exa costs stay flat. With the 19 shipped searches the whole list is covered about every day and a quarter. Searches use Exa's company index, so results are company homepages rather than articles or job boards. The shipped list is `webapp/search_queries_default.txt`; save your own from **Settings** and it replaces it.
+
+### Emails the scraper won't use
+
+An address is used only if it's on the company's own domain (`hr@hubtel.com` for `hubtel.com.gh` counts) or a free mailbox like Gmail, which small firms often use. Anything else (an applicant-tracking vendor's `contact@manatal.com`, an agency) is not sent to: the company waits in **Needs you** with a note saying what was found. Job aggregators (Expertini, Jooble...) and applicant-tracking systems (Workable, Lever, Manatal...) are skipped as leads.
+
+### The review email
+
+After a scrape, companies that need you arrive in one email, grouped by what each needs (choose a role, find an email, confirm the name), with the evidence and a **Fix** button that opens that company in Needs you. Set a `DASHBOARD_URL` repo Variable if your dashboard isn't at this repo's homepage address.
+
 ### How companies get their role
 
 The scraper reads each company's page and gives it the role whose **keywords** it mentions most (`role_match.py`). Each role's keywords are editable on its dashboard page, e.g. `react, node.js, saas` for full-stack or `kubernetes, terraform, aws` for DevOps. A role wins only with a clear lead: at least 2 different keywords, and more than any other role. One word repeated many times doesn't count, and partial words don't match (`laws` is not `aws`).
 
 **Otherwise you decide.** The company waits in **Needs you** under *Choose a role*, with the search's role (or the default) pre-selected as a best guess and the reason it's unsure. It is never auto-approved or sent until you pick one (on Needs you, or by saving its page), and the review email lists it. Searches can still carry a role as that best guess. Each line of `search_queries.txt` (dashboard &rarr; Settings) can name one as a third part: `SaaS startups in Accra | 10 | software`. Lines without one use the default role. From the CLI: `search "fintech startups in Lagos" 10 --track software`.
 
-Every company records why it got its role (`role_reason`, e.g. *site mentions react, typescript*, or *no clear signal on site; pre-selected this search's role* for one waiting on you). This shows on its page and on Up next, where you can change it before the send; your change is recorded as *set by you*. Companies already in the queue keep their current role.
+Every company records why it got its role (`role_reason`, e.g. *site mentions react, typescript*, or *site doesn't mention any role's keywords; pre-selected this search's role* for one waiting on you). This shows on its page and on Up next, where you can change it before the send; your change is recorded as *set by you*. Companies already in the queue keep their current role.
 
 ### The DevOps sector letters
 
@@ -177,8 +189,8 @@ Two exclusion lists at the top of `followup_pipeline.py` are worth maintaining a
 
 Two workflows run on independent schedules instead of one combined run, so discovery doesn't wait on the send cadence and vice versa:
 
-*   **`.github/workflows/scrape-pipeline.yml`**, every 6 hours (00:00, 06:00, 12:00, 18:00 UTC): `search` against the queries written into the workflow, `scrape` to resolve contact emails for whatever's missing one, then `notify-review` to email you about any `Review` or missing-email row you haven't been told about yet.
-*   **`.github/workflows/send-pipeline.yml`**, once a day at 09:00 UTC (9am in Accra, GMT with no DST): `auto-approve`, `generate`, `send`, then `followup_pipeline.py run`.
+*   **`.github/workflows/scrape-pipeline.yml`**, every 6 hours (00:17, 06:17, 12:17, 18:17 UTC): `search` against the queries written into the workflow, `scrape` to resolve contact emails for whatever's missing one, then `notify-review` to email you about any `Review` or missing-email row you haven't been told about yet.
+*   **`.github/workflows/send-pipeline.yml`**, weekdays at 07:23 UTC (7:23am in Accra, GMT with no DST; off the hour because GitHub delays top-of-the-hour schedules, and weekends skipped so cold emails don't sit under Monday's pile): `auto-approve`, `generate`, `send`, then `followup_pipeline.py run`.
 
 A clean lead (the scraper trusted the company name and found a real email) needs no human at all: `auto-approve` promotes it straight from `Pending` to `Approved` and the next `send` run emails it. The only rows that wait on a person are the ones the scraper itself couldn't resolve: an unclear company name (`Review`) or no email found (`Skipped`). Those are what the `notify-review` email and the [Triage Dashboard](#-triage-dashboard-optional-web-app) below are for. Run without the dashboard and those two cases simply sit until you fix them by hand in the CSV.
 
@@ -194,7 +206,7 @@ Because this repo is public, the queue, log, and CV cannot live here (see `.giti
 | `SENDER_EMAIL`, `GMAIL_APP_PASSWORD`, `APPLICANT_EMAIL` | Secrets | both (scrape-pipeline sends the review-needed notification to `APPLICANT_EMAIL`) | Same values as `.env` |
 | `APPLICANT_PHONE` | Secret | send-pipeline | Same value as `.env` |
 
-Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to test before waiting for its schedule. Want a different cadence? Both are plain cron (`cron: "0 */6 * * *"` and `cron: "0 9 * * *"`) in each workflow's `on.schedule`.
+Trigger either workflow manually from the Actions tab (`workflow_dispatch`) to test before waiting for its schedule. Want a different cadence? Both are plain cron (`cron: "17 */6 * * *"` and `cron: "23 7 * * 1-5"`); if you change them, update `SEND_*` / `SCRAPE_*` in `webapp/app.py` so the dashboard shows the right times in each workflow's `on.schedule`.
 
 ### Setting up your own companion repo
 

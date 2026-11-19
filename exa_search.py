@@ -18,18 +18,27 @@ class ExaSearch:
             "Content-Type": "application/json"
         }
         
+        # category "company" uses Exa's company index: results are company
+        # homepages, not news articles, directories or job boards. It rejects
+        # some parameters (domain and date filters) with a 400, so if it's ever
+        # refused we retry once as a plain search rather than finding nothing.
         payload = {
             "query": query,
             "type": "auto",
+            "category": "company",
             "numResults": num_results,
             "contents": {
                 "text": True
             }
         }
-        
+
         print(f"[Exa] Searching for: '{query}'...")
         try:
             response = requests.post(url, json=payload, headers=headers)
+            if response.status_code == 400:
+                print(f"[Exa] Company search refused ({response.text[:200]}); retrying as a plain search.")
+                payload.pop("category")
+                response = requests.post(url, json=payload, headers=headers)
             if response.status_code == 200:
                 data = response.json()
                 results = data.get("results", [])

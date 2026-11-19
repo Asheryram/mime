@@ -62,7 +62,9 @@
             why: "The site didn't clearly fit one role, so this waits for you instead of guessing. Open the site, pick the pitch (and CV) it should get, and it rejoins the queue." }
   };
   function fieldId(reason) { return reason === "name" ? "t-name" : reason === "role" ? "t-role" : "t-email"; }
-  var filter = "all", selSlug = null, checked = {};
+  // ?focus=<slug> (the review email's Fix links) opens that company directly.
+  var focusSlug = new URLSearchParams(location.search).get("focus");
+  var filter = "all", selSlug = focusSlug, checked = {};
   var els = {
     filters: document.getElementById("t-filters"), list: document.getElementById("t-items"),
     detail: document.getElementById("t-detail"), body: document.getElementById("t-body"),
@@ -207,7 +209,14 @@
         h("button", { type: "button", class: "icon-btn t-close", "aria-label": "Close", on: { click: function () { els.detail.classList.remove("open"); } } }, ["✕"])
       ])
     ]));
-    els.detail.appendChild(h("p", { class: "t-why", text: r.why }));
+    if (i.reason === "email" && i.email_note) {
+      // An address was found but it belongs to another organisation (an ATS
+      // vendor, an agency): say that instead of "found no address", and don't
+      // offer it as a chip.
+      els.detail.appendChild(h("p", { class: "callout warn", text: "The scraper " + i.email_note + ", so it didn't use it. Find this company's own careers, HR or contact address." }));
+    } else {
+      els.detail.appendChild(h("p", { class: "t-why", text: r.why }));
+    }
     els.detail.appendChild(form);
   }
 
@@ -337,6 +346,13 @@
   });
 
   render();
+  if (focusSlug && bySlug(focusSlug)) {
+    if (mobile.matches) els.detail.classList.add("open");
+    var ff = document.getElementById(fieldId(bySlug(focusSlug).reason));
+    if (ff && !mobile.matches) ff.focus();
+  } else if (focusSlug) {
+    toast("That company no longer needs you: it's already been fixed.");
+  }
 })();
 </script>
 {% endblock %}

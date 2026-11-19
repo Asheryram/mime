@@ -3,7 +3,7 @@ import csv
 import sys
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import formatdate
 from urllib.parse import urlparse
@@ -13,6 +13,7 @@ from apify_scraper import ApifyScraper
 from cover_letter_generator import CoverLetterGenerator
 from email_sender import EmailSender
 import applicant
+import review_email
 import role_match
 import smtp_client
 from smtp_client import GmailAuthError
@@ -28,7 +29,7 @@ QUEUE_FIELDS = [
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
-    "role_reason", "role_review"
+    "role_reason", "role_review", "email_note"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -36,10 +37,15 @@ DAILY_SEND_LIMIT = 15
 # search_queries.txt (edited from the dashboard's Settings page, stored in the
 # companion repo) drives the scheduled scrape. These are used until it exists.
 SEARCH_QUERIES_FILE = "search_queries.txt"
-DEFAULT_SEARCH_QUERIES = [
-    ("cloud and devops engineering companies Accra Ghana", 10, None),
-    ("fintech and payments companies hiring engineers Ghana", 10, None),
-]
+# The shipped searches, used until you save your own from the dashboard
+# (Settings -> searches). The dashboard shows the same file, so the two agree.
+DEFAULT_SEARCH_QUERIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                           "webapp", "search_queries_default.txt")
+
+# Searches run per scrape. Running every line every 6 hours would re-fetch the
+# same results (Exa is mostly stable for a given query) and pay for it; a few
+# per run, in rotation, means each run looks somewhere new.
+QUERIES_PER_RUN = 4
 
 # Initialize services
 exa = None
@@ -181,7 +187,85 @@ JOB_BOARD_DOMAINS = {
     "techjobsinghana.com", "ghanacareers.com", "jobsinghana.com", "jobsearchghana.com",
     "myjobmag.com", "brightermonday.com", "workinghana.com", "joblistghana.com",
     "careersinghana.com", "remoteok.com", "wellfound.com", "angel.co", "glints.com",
+    # Job-ad aggregators: page titles are job titles ("Senior Frontend
+    # Developer At Expresspay Ghana Limited"), not employers.
+    "expertini.com", "jooble.org", "jobrapido.com", "careerjet.com", "talent.com",
+    "jobzmall.com", "simplyhired.com", "adzuna.com", "jobsora.com", "whatjobs.com",
+    "ghanajob.com", "jobwebghana.com", "jobsinafrica.com", "africajobs.net",
+    "remotive.com", "weworkremotely.com", "himalayas.app", "otta.com",
 }
+
+
+# Applicant-tracking systems. A company's careers page hosted on one of these
+# is the vendor's site: crawling it finds the vendor's own address
+# (contact@manatal.com), never the employer's.
+ATS_DOMAINS = {
+    "manatal.com", "careers-page.com", "workable.com", "apply.workable.com", "lever.co",
+    "greenhouse.io", "bamboohr.com", "zohorecruit.com", "smartrecruiters.com", "breezy.hr",
+    "recruitee.com", "teamtailor.com", "myworkdayjobs.com", "applytojob.com", "jazzhr.com",
+    "ashbyhq.com", "personio.de", "personio.com", "jobvite.com", "icims.com", "rippling.com",
+}
+JOB_BOARD_DOMAINS |= ATS_DOMAINS
+
+# Free mailbox providers. Small firms often use these as their real contact
+# address, so an address here found on the company's own site is accepted.
+FREE_MAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "ymail.com", "outlook.com",
+    "hotmail.com", "live.com", "msn.com", "icloud.com", "me.com", "aol.com",
+    "proton.me", "protonmail.com", "zoho.com", "gmx.com", "mail.com",
+}
+
+# Second-level suffixes, so "hubtel.com.gh" reduces to hubtel.com.gh, not com.gh.
+_SECOND_LEVEL = {"com", "co", "org", "net", "edu", "gov", "ac", "or", "ltd", "biz"}
+
+
+def registrable_domain(host):
+    """'careers.hubtel.com.gh' -> 'hubtel.com.gh'; 'mail.example.com' -> 'example.com'."""
+    host = (host or "").lower().strip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    parts = host.split(".")
+    if len(parts) >= 3 and parts[-2] in _SECOND_LEVEL and len(parts[-1]) == 2:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def email_fits_site(email, website):
+    """
+    Whether an address scraped from a company's site plausibly belongs to that
+    company: same organisation domain, or a free mailbox (small firms use them).
+    Anything else - a vendor, an agency, a parent group - needs a human to decide.
+    """
+    domain = email.rsplit("@", 1)[-1].lower()
+    if domain in FREE_MAIL_DOMAINS:
+        return True
+    if registrable_domain(domain) in ATS_DOMAINS:
+        return False
+    email_org, site_org = registrable_domain(domain), registrable_domain(urlparse(website).netloc)
+    # Same name label across TLDs counts too: Ghanaian firms often run
+    # hubtel.com.gh as the site and hubtel.com for mail.
+    return email_org == site_org or email_org.split(".")[0] == site_org.split(".")[0]
+
+
+def choose_email(emails, website):
+    """
+    Pick the address to write to. Returns (email, note): email is "" when only
+    addresses from other organisations were found, and note says what was
+    rejected so the dashboard can show it.
+    """
+    valid = [e.strip() for e in emails if "@" in e and "." in e.split("@")[-1]]
+    fitting = [e for e in valid if email_fits_site(e, website)]
+    if not fitting:
+        others = sorted({e.lower() for e in valid})
+        note = (f"only found {', '.join(others[:3])}, not on this company's domain"
+                if others else "")
+        return "", note
+    # Prefer the company's own domain over a free mailbox, then a hiring inbox.
+    own = [e for e in fitting if e.rsplit("@", 1)[-1].lower() not in FREE_MAIL_DOMAINS] or fitting
+    for e in own:
+        if any(k in e.lower() for k in ["hr", "career", "job", "recruit", "hire", "people", "contact"]):
+            return e, ""
+    return own[0], ""
 
 # Page titles that carry no company identity. If a title reduces to one of
 # these, the name has to be set by hand before the row can safely be emailed.
@@ -278,14 +362,31 @@ def clean_company_name(title):
 
 
 def load_search_queries(path=SEARCH_QUERIES_FILE):
+    """Your saved searches, else the shipped defaults."""
+    queries = _parse_search_queries(path) if os.path.exists(path) else []
+    return queries or _parse_search_queries(DEFAULT_SEARCH_QUERIES_FILE)
+
+
+def queries_for_this_run(queries, now=None, per_run=QUERIES_PER_RUN):
     """
-    One search per line, optionally "query | limit" (1-25, default 10); blank
-    lines and "#" comments ignored. Falls back to DEFAULT_SEARCH_QUERIES when
-    the file is missing or has no usable lines, so a scrape never silently
-    searches for nothing.
+    The slice of searches this scrape runs. Slots advance every 6 hours (the
+    scrape cadence), so consecutive runs take consecutive slices and the whole
+    list is covered every ceil(n / per_run) runs - with the defaults, about
+    every day and a quarter.
     """
-    if not os.path.exists(path):
-        return DEFAULT_SEARCH_QUERIES
+    if len(queries) <= per_run:
+        return list(queries)
+    now = now or datetime.now(timezone.utc)
+    slot = int(now.timestamp() // (6 * 3600))
+    start = (slot * per_run) % len(queries)
+    return [queries[(start + i) % len(queries)] for i in range(per_run)]
+
+
+def _parse_search_queries(path):
+    """
+    One search per line, optionally "query | limit | track" (limit 1-25,
+    default 10); blank lines and "#" comments ignored.
+    """
     queries = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -310,13 +411,16 @@ def load_search_queries(path=SEARCH_QUERIES_FILE):
                       f"Use one of: {', '.join(applicant.TRACKS)}")
                 continue
             queries.append((query, max(1, min(n, 25)), track))
-    return queries or DEFAULT_SEARCH_QUERIES
+    return queries
 
 
 def run_search_all():
     # Each query carries its own track (None = DEFAULT_TRACK), so one scrape
     # can feed several roles.
-    for query, limit, track in load_search_queries():
+    queries = load_search_queries()
+    this_run = queries_for_this_run(queries)
+    print(f"[Pipeline] Running {len(this_run)} of {len(queries)} searches this time (they rotate each run).")
+    for query, limit, track in this_run:
         run_exa_search(query, limit, track=track)
 
 
@@ -447,78 +551,44 @@ def run_apify_scrape():
     scraper_service = get_apify()
     scraped_data = scraper_service.run_contact_scraper(just_urls, max_pages=8, depth=1)
     
-    # Map scraped data back to queue
-    updated_count = 0
-    processed_domains = set()
-    for name, web in urls_to_crawl:
-        parsed = urlparse(web)
-        dom = parsed.netloc.lower()
-        if dom.startswith("www."):
-            dom = dom[4:]
-        processed_domains.add(dom)
+    # Map scraped data back to queue. Only rows in this batch are eligible: an
+    # earlier version matched the first row anywhere in the queue with the same
+    # domain, so a crawl could write to an old row and leave this one empty
+    # forever (re-crawled every run).
+    def dom_of(url):
+        d = urlparse(url).netloc.lower()
+        return d[4:] if d.startswith("www.") else d
 
-    successful_domains = set()
+    batch_rows = {dom_of(web): r for r in batch for name, web in urls_to_crawl if r["company_name"] == name}
+    found = {}  # domain -> list of emails across all crawled pages
     for item in scraped_data:
         scraped_url = item.get("originalStartUrl") or item.get("url", "")
-        domain_field = item.get("domain", "")
-        
-        scraped_domain = domain_field.lower() if domain_field else ""
-        if not scraped_domain and scraped_url:
-            scraped_domain = urlparse(scraped_url).netloc.lower()
-            
+        scraped_domain = (item.get("domain") or "").lower() or dom_of(scraped_url)
         if scraped_domain.startswith("www."):
             scraped_domain = scraped_domain[4:]
-            
-        if not scraped_domain:
-            continue
-        
-        # Find emails
-        emails_list = item.get("emails", [])
-        # filter out invalid emails (like PNG, JPG, or placeholder strings)
-        valid_emails = [e for e in emails_list if "@" in e and "." in e.split("@")[1]]
-        
-        if not valid_emails:
-            continue
-            
-        # Get primary email (prefer recruiter, contact, HR, jobs; else first)
-        primary_email = ""
-        for email in valid_emails:
-            el = email.lower()
-            if any(k in el for k in ["hr", "career", "job", "recruitment", "hire", "people", "contact"]):
-                primary_email = email
+        for row_domain in batch_rows:
+            if (row_domain == scraped_domain or row_domain.endswith("." + scraped_domain)
+                    or scraped_domain.endswith("." + row_domain)):
+                found.setdefault(row_domain, []).extend(item.get("emails", []))
                 break
-        if not primary_email:
-            primary_email = valid_emails[0]
-            
-        # Update queue row
-        for r in queue:
-            if r["website"]:
-                parsed_row = urlparse(r["website"])
-                row_domain = parsed_row.netloc.lower()
-                if row_domain.startswith("www."):
-                    row_domain = row_domain[4:]
-                if row_domain == scraped_domain or row_domain.endswith("." + scraped_domain) or scraped_domain.endswith("." + row_domain):
-                    r["email"] = primary_email
-                    print(f"[Pipeline] Found email '{primary_email}' for '{r['company_name']}'")
-                    updated_count += 1
-                    successful_domains.add(row_domain)
-                    break
 
-    # Mark domains that were crawled but failed to find emails
-    for dom in processed_domains:
-        if dom not in successful_domains:
-            for r in queue:
-                if r["website"]:
-                    parsed_row = urlparse(r["website"])
-                    row_domain = parsed_row.netloc.lower()
-                    if row_domain.startswith("www."):
-                        row_domain = row_domain[4:]
-                    if row_domain == dom:
-                        r["email"] = "no_email_found"
-                        r["status"] = "Skipped"
-                        print(f"[Pipeline] No email found for '{r['company_name']}'. Marking as Skipped.")
-                        break
-                    
+    updated_count = 0
+    for row_domain, r in batch_rows.items():
+        email, note = choose_email(found.get(row_domain, []), r["website"])
+        if email:
+            r["email"] = email
+            r["email_note"] = ""
+            updated_count += 1
+            print(f"[Pipeline] Found email '{email}' for '{r['company_name']}'")
+        else:
+            # No usable address: wait in Needs you rather than guess. The note
+            # records any other-domain address so you can judge it yourself.
+            r["email"] = "no_email_found"
+            r["status"] = "Skipped"
+            r["email_note"] = note
+            print(f"[Pipeline] No email found for '{r['company_name']}'"
+                  + (f" ({note})" if note else "") + ". Marking as Skipped.")
+
     save_queue(queue)
     print(f"[Pipeline] Scraping complete. Updated {updated_count} companies with email addresses.")
 
@@ -573,33 +643,26 @@ def run_notify_needs_review():
         print("[Pipeline] No new rows need review.")
         return
 
-    lines = []
-    for r in needs_review:
-        if r["status"] == "Review":
-            reason = "unclear company name"
-        elif r["status"] == "Skipped":
-            reason = "no email found"
-        elif r.get("track") and r["track"] not in applicant.TRACKS:
-            reason = f"choose a role (its role '{r['track']}' was removed)"
-        else:
-            reason = f"choose a role ({r.get('role_reason') or 'no clear fit'})"
-        lines.append(f"- {r['company_name']} ({r['website']}): {reason}")
-
+    # Ones flagged in an earlier email and still unresolved: counted, not
+    # repeated, so the email stays about what's new.
+    earlier = [
+        r for r in queue
+        if r.get("review_notified", "").strip().lower() == "yes"
+        and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found")
+             or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
+    ]
     count = len(needs_review)
-    subject = f"{count} compan{'y needs' if count == 1 else 'ies need'} your review in the outreach queue"
-    body = (
-        f"{subject}:\n\n"
-        + "\n".join(lines)
-        + "\n\nFix these in the triage dashboard, or edit outreach_queue.csv directly. "
-        + "They won't be sent until resolved."
-    )
+    subject, text, html = review_email.build(
+        needs_review, list(applicant.TRACKS),
+        dashboard_url=config.get("DASHBOARD_URL") or "", earlier_waiting=len(earlier))
 
     msg = EmailMessage()
     msg["From"] = config.get("SENDER_EMAIL") or ""
     msg["To"] = applicant.EMAIL
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)
-    msg.set_content(body)
+    msg.set_content(text)
+    msg.add_alternative(html, subtype="html")
 
     try:
         smtp_client.send(msg, applicant.EMAIL)

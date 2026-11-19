@@ -51,7 +51,9 @@ def pick_role(text, tracks, fallback, fallback_source="the search's role"):
         if len(ranked) > 1 and len(found) == runner_up and len(found) >= MIN_MATCHES:
             tied = " and ".join(k for k, v in ranked if len(v) == len(found))
             return fallback, f"site fits {tied} equally; pre-selected {fallback_source}", False
+    # Reasons are read by you (dashboard, review email), so plain words.
     if ranked:
-        return fallback, (f"weak signal on site ({ranked[0][0]}: {', '.join(ranked[0][1])}); "
+        only = sorted({kw for _, kws in ranked for kw in kws})
+        return fallback, (f"site only mentions {', '.join(only[:MAX_LISTED])}, not enough to be sure; "
                           f"pre-selected {fallback_source}"), False
-    return fallback, f"no clear signal on site; pre-selected {fallback_source}", False
+    return fallback, f"site doesn't mention any role's keywords; pre-selected {fallback_source}", False
