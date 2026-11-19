@@ -68,7 +68,7 @@ Detected marks show as *replied (auto)* with what was found; marks you make by h
 
 ### The review email
 
-After a scrape, companies that need you arrive in one email, grouped by what each needs (choose a role, find an email, confirm the name), with the evidence and a **Fix** button that opens that company in Needs you. Set a `DASHBOARD_URL` repo Variable if your dashboard isn't at this repo's homepage address.
+After a scrape, companies that need you arrive in one email, grouped by what each needs (choose a role, find an email, confirm the name), with the evidence and a **Fix** button that opens that company in Needs you. The links use `https://sage-apply.vercel.app`; if you fork this, set a `DASHBOARD_URL` repo Variable to your own dashboard's address.
 
 ### How companies get their role
 

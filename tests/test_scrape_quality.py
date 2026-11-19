@@ -300,5 +300,13 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual((self.app.SEND_HOUR_UTC, self.app.SEND_MINUTE, self.app.SCRAPE_MINUTE), (7, 23, 17))
 
 
+class DashboardUrlTests(unittest.TestCase):
+    def test_review_email_links_point_at_the_live_dashboard(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "scrape-pipeline.yml")) as f:
+            wf = f.read()
+        self.assertIn("'https://sage-apply.vercel.app'", wf)
+        self.assertNotIn("webapp-green-nine-47", wf)
+
+
 if __name__ == "__main__":
     unittest.main()
