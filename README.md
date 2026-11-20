@@ -66,6 +66,12 @@ Before each send and every scrape, `check-inbox` reads the sending Gmail (`SENDE
 
 Detected marks show as *replied (auto)* with what was found; marks you make by hand are never undone. If the inbox can't be checked, new applications still go out but **follow-ups are skipped** that run. A reply from an unrelated address with a fresh subject (a recruiter's personal Gmail) can't be linked: mark those by hand.
 
+### When a company refers you elsewhere
+
+Replies like *"please send your CV to recruitment@..."* are handled from that company's page: **They referred me** takes the new address, who referred you (their name opens the email: *"Agyeiwaa from your team kindly suggested..."*), the role, and what to attach: **CV + cover letter** (recommended), **CV only**, or **cover letter only** (rarely right). **Preview email** shows the exact message; nothing is sent until you press **Send now** (starts a referrals-only run within minutes) or **Send with next batch**.
+
+The company stays one row; its referral is recorded on it and marked as their reply, so no follow-up chases them. Referrals don't count against the daily cap and are never followed up automatically. Replies and bounces from the new address are detected like any other.
+
 ### The review email
 
 After a scrape, companies that need you arrive in one email, grouped by what each needs (choose a role, find an email, confirm the name), with the evidence and a **Fix** button that opens that company in Needs you. The links use `https://sage-apply.vercel.app`; if you fork this, set a `DASHBOARD_URL` repo Variable to your own dashboard's address.

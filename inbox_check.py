@@ -216,6 +216,14 @@ def check_inbox(queue, user, password, **kw):
     Raises on login/network failure: the caller decides whether that's fatal.
     """
     rows = open_rows(queue)
+    # Referrals: the application sent on to the address a company gave you.
+    # Watched separately, since the company row is usually already "replied".
+    for r in queue:
+        if (r.get("referral_status") == "sent" and "@" in (r.get("referral_email") or "")
+                and r.get("referral_replied", "").strip().lower() != "yes"):
+            rows.append({"company_name": r["company_name"], "email": r["referral_email"].strip(),
+                         "message_id": r.get("referral_message_id", ""),
+                         "date_sent": r.get("referral_date", ""), "_referral_of": r})
     if not rows:
         return [], []
     sent_dates = [d for d in (_sent_at(r) for r in rows) if d]
@@ -225,6 +233,15 @@ def check_inbox(queue, user, password, **kw):
     replied, bounced = [], []
     for i, (kind, note) in classify(messages, rows, user).items():
         r = rows[i]
+        if "_referral_of" in r:
+            row = r["_referral_of"]
+            if kind == "replied":
+                row["referral_replied"] = "yes"
+            else:
+                row["referral_status"] = "bounced"
+            row["referral_note"] = f"auto-detected: {note}"
+            (replied if kind == "replied" else bounced).append(f"{r['company_name']} (referral)")
+            continue
         r[kind] = "yes"
         r["reply_note"] = f"auto-detected: {note}"
         (replied if kind == "replied" else bounced).append(r["company_name"])

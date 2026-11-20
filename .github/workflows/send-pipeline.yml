@@ -2,13 +2,21 @@ name: Daily send pipeline
 
 on:
   schedule:
-    # 09:00 UTC = 9am in Accra (GMT, no DST)
     # 07:23 UTC (= Accra) on weekdays. Off the hour on purpose: GitHub delays
     # top-of-the-hour schedules when busy, and "0 9" was running at ~18:00,
     # landing applications after work. Weekends are skipped: a cold email sent
     # Saturday sits under Monday's pile. Keep in step with SEND_* in webapp/app.py.
     - cron: "23 7 * * 1-5"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        # "referrals" is what the dashboard's "Send now" on a referral uses:
+        # it sends queued referrals and nothing else, so it can't send the
+        # day's batch early or twice.
+        description: "full = the normal daily run; referrals = only queued referrals"
+        type: choice
+        options: [full, referrals]
+        default: full
 
 # Shared with scrape-pipeline.yml so the two never run at once (e.g. a "Run now"
 # from the dashboard landing on top of a scheduled run) and fight over the queue.
@@ -79,16 +87,25 @@ jobs:
         # already replied. Read-only, headers only (see inbox_check.py).
         run: python3 outreach_pipeline.py check-inbox
 
+      - name: Send queued referrals
+        # Applications a company asked you to send to another address,
+        # queued from that company's dashboard page.
+        run: python3 outreach_pipeline.py send-referrals
+
       - name: Auto-approve clean leads
+        if: ${{ inputs.mode != 'referrals' }}
         run: python3 outreach_pipeline.py auto-approve
 
       - name: Generate cover letters
+        if: ${{ inputs.mode != 'referrals' }}
         run: python3 outreach_pipeline.py generate
 
       - name: Send approved applications
+        if: ${{ inputs.mode != 'referrals' }}
         run: python3 outreach_pipeline.py send
 
       - name: Send eligible follow-ups
+        if: ${{ inputs.mode != 'referrals' }}
         run: python3 followup_pipeline.py run
 
       - name: Push updated state back to the private repo
@@ -101,7 +118,7 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add outreach_queue.csv outreach_log.csv
           git diff --cached --quiet && exit 0
-          git commit -m "Daily send run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git commit -m "${{ inputs.mode == 'referrals' && 'Referral send' || 'Daily send run' }}: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           # This run can take ~15 minutes (spaced-out sends), and the dashboard
           # may have edited the queue meanwhile. Losing this push would lose the
           # "Sent" marks and re-send tomorrow, so rebase onto those edits
