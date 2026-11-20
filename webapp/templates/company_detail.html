@@ -70,6 +70,76 @@
       </div>
     </section>
 
+    {% if c.status in ("Sent", "Followup-Sent") or c.referral_status %}
+    {% set rs = c.referral_status %}
+    <section class="panel card-box" id="referral">
+      <div class="panel-head"><h2>They referred me</h2></div>
+
+      {% if rs == "queued" %}
+        <div class="callout info">Queued: your application goes to <b>{{ c.referral_email }}</b> ({{ {"both": "CV + cover letter", "cv": "CV only", "letter": "cover letter only"}[c.referral_attach or "both"] }}) at the next send, or within minutes if you pressed Send now.</div>
+        <form method="post" action="{{ url_for('company_referral', slug=c.slug) }}" class="inline">
+          <input type="hidden" name="action" value="cancel"><button type="submit" class="ghost sm">Cancel</button>
+        </form>
+
+      {% elif rs == "draft" and referral_preview %}
+        <p class="hint">Check it, then send. Nothing goes out until you press a button below.</p>
+        <dl class="kv">
+          <dt>To</dt><dd class="mono">{{ c.referral_email }}</dd>
+          <dt>Subject</dt><dd>{{ referral_preview.subject }}</dd>
+          <dt>Attached</dt><dd>{{ {"both": "CV + cover letter", "cv": "CV only", "letter": "Cover letter only"}[c.referral_attach or "both"] }} ({{ c.track }} role)</dd>
+        </dl>
+        <pre style="white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; margin: 10px 0 4px;">{{ referral_preview.body }}</pre>
+        <p class="small muted" style="margin: 0 0 12px;">Your signature is added when it's sent.</p>
+        <div class="row-actions">
+          <form method="post" action="{{ url_for('company_referral', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="action" value="send_now"><button type="submit" class="sm">Send now</button>
+          </form>
+          <form method="post" action="{{ url_for('company_referral', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="action" value="queue"><button type="submit" class="ghost sm">Send with next batch</button>
+          </form>
+          <form method="post" action="{{ url_for('company_referral', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="action" value="cancel"><button type="submit" class="ghost sm">Edit</button>
+          </form>
+        </div>
+
+      {% else %}
+        {% if rs == "sent" %}
+          <div class="callout info">Sent to <b>{{ c.referral_email }}</b> on {{ c.referral_date|day }}.
+            {% if c.referral_replied == "yes" %}<b>They replied.</b>{% else %}No reply yet; replies are picked up automatically.{% endif %}
+            {% if c.referral_note %}<br><span class="small">{{ c.referral_note[0]|upper }}{{ c.referral_note[1:] }}</span>{% endif %}</div>
+        {% elif rs in ("failed", "bounced") %}
+          <div class="callout warn">Not delivered{% if c.referral_note %}: {{ c.referral_note }}{% endif %}. Fix the details below and preview again.</div>
+        {% else %}
+          <p class="hint">When they reply asking you to apply at another address, enter it here. The email says who pointed you there, uses this role's pitch, and attaches what you choose.</p>
+        {% endif %}
+
+        <details {{ 'open' if rs not in ("sent",) }}>
+          <summary class="small" style="cursor: pointer; margin-bottom: 10px;">{{ 'Send to another address' if rs == 'sent' else 'Referral details' }}</summary>
+          <form method="post" action="{{ url_for('company_referral', slug=c.slug) }}">
+            <input type="hidden" name="action" value="preview">
+            <div class="form-grid">
+              <div class="full"><label for="referral_email">Send my application to</label>
+                <input id="referral_email" type="email" name="referral_email" value="{{ c.referral_email if rs != 'sent' else '' }}" placeholder="recruitment@company.com" required></div>
+              <div><label for="referral_by">Who referred you (optional)</label>
+                <input id="referral_by" type="text" name="referral_by" value="{{ c.referral_by }}" maxlength="60" placeholder="e.g. Agyeiwaa">
+                <p class="small muted" style="margin-top:4px">Their first name, as they signed. It opens the email: “Agyeiwaa from your team kindly suggested…”</p></div>
+              <div><label for="ref_track">Role (pitch and CV)</label>
+                <select id="ref_track" name="track">{% for t in tracks %}<option value="{{ t }}" {{ 'selected' if t == c.track }}>{{ t }}</option>{% endfor %}</select></div>
+              <div class="full"><label>Attach</label>
+                {% for key, label, hint in referral_attach %}
+                <label class="check" style="display:block; margin: 6px 0;">
+                  <input type="radio" name="referral_attach" value="{{ key }}" {{ 'checked' if key == (c.referral_attach or 'both') }}>
+                  <b>{{ label }}</b> <span class="small muted">{{ hint }}</span></label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="form-actions"><button type="submit" class="sm">Preview email</button></div>
+          </form>
+        </details>
+      {% endif %}
+    </section>
+    {% endif %}
+
     <section class="panel card-box">
       <div class="panel-head"><h2>History</h2></div>
       <dl class="kv">

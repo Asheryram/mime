@@ -39,6 +39,8 @@ QUEUE_FIELDS = [
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
     "role_reason", "role_review", "email_note", "reply_note",
+    "referral_email", "referral_by", "referral_attach", "referral_status",
+    "referral_date", "referral_message_id", "referral_replied", "referral_note",
 ]
 
 
@@ -302,10 +304,13 @@ def latest_run(workflow_file):
     }
 
 
-def dispatch_workflow(workflow_file):
+def dispatch_workflow(workflow_file, inputs=None):
+    body = {"ref": BRANCH}
+    if inputs:
+        body["inputs"] = inputs
     r = requests.post(
         f"{API}/repos/{PIPELINE_REPO}/actions/workflows/{workflow_file}/dispatches",
-        headers=_headers(), json={"ref": BRANCH}, timeout=15,
+        headers=_headers(), json=body, timeout=15,
     )
     if r.status_code in (403, 404):
         raise TokenPermissionError(PIPELINE_REPO)

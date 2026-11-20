@@ -761,6 +761,11 @@ def company_detail(slug):
 
     return render_template(
         "company_detail.html", active="companies", nav=nav, c=company,
+        referral_attach=REFERRAL_ATTACH,
+        referral_preview=(referral_preview(current_tracks()[0][company["track"]], company["company_name"],
+                                           company.get("referral_by", ""), company.get("referral_attach") or "both")
+                          if company.get("referral_status") == "draft" and company["track"] in current_tracks()[0]
+                          else None),
         statuses=STATUSES, company_types=COMPANY_TYPES, tracks=tracks,
         reason=attention_reason(company) if company["bucket"] == "attention" else None,
     )
@@ -776,6 +781,135 @@ def company_delete(slug):
     else:
         flash(f"Deleted {row['company_name']}.", "success")
     return redirect(url_for("companies_list"))
+
+
+# --- Referrals ------------------------------------------------------------------
+# A company answers "please send your CV to recruitment@...". From its page you
+# fill in that address, who pointed you there, the role and what to attach,
+# preview the exact email, then send now or with the next batch. The pipeline
+# (run_send_referrals) does the sending. One row per company throughout.
+
+REFERRAL_ATTACH = [
+    ("both", "CV + cover letter",
+     "Recommended. Right whenever they ask for an application, or for \u201cyour CV and any relevant documents\u201d."),
+    ("cv", "CV only",
+     "When they ask for just your CV, or say a short email is preferred."),
+    ("letter", "Cover letter only",
+     "Rarely right: a recruiter can't assess you without your CV. Only if they already have it."),
+]
+REFERRAL_ATTACH_LINE = {  # mirrors applicant.REFERRAL_ATTACHMENTS
+    "both": "My CV and cover letter are attached.",
+    "cv": "My CV is attached.",
+    "letter": "My cover letter is attached, and I am happy to send my CV as well.",
+}
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[a-z]{2,}$", re.I)
+
+
+def referral_preview(role, company, referred_by="", attach="both"):
+    """
+    The referral email exactly as applicant.build_referral_body writes it,
+    minus the signature (your name and phone live in the pipeline's .env).
+    tests/test_referrals.py keeps the two in step.
+    """
+    who = (referred_by or "").strip()
+    opener = (f"{who} from your team kindly suggested I send my application to this address."
+              if who else "I was asked to send my application to this address.")
+    highlights = "\n".join(f"- {h}" for h in role["highlights"][:3])
+    subject = f"Application: {role['role_title']} \u2013 <your name>"
+    body = (
+        f"Dear {company} Recruitment Team,\n\n"
+        f"{opener}\n\n"
+        f"My name is <your name>. I am {role['credentials']}. I would like to be considered "
+        f"for {role['interest_area']} roles at {company}.\n\n"
+        f"Some highlights of my work:\n"
+        f"{highlights}\n\n"
+        f"{REFERRAL_ATTACH_LINE.get(attach, REFERRAL_ATTACH_LINE['both'])} "
+        f"Thank you for your time and consideration.\n\n"
+    )
+    return {"subject": subject, "body": body}
+
+
+@app.route("/companies/<slug>/referral", methods=["POST"])
+@login_required
+def company_referral(slug):
+    tracks, _ = current_tracks()
+    f = request.form
+    action = f.get("action", "preview")
+    back = url_for("company_detail", slug=slug) + "#referral"
+
+    if action == "cancel":
+        def cancel(rows):
+            for r in rows:
+                if state_repo.slugify(r["company_name"]) == slug and r.get("referral_status") in ("draft", "queued"):
+                    r["referral_status"] = ""
+                    return True
+            return False
+        flash("Not sent. Your details are kept below to edit or send later." if state_repo.mutate_queue(cancel, f"Cancel referral for {slug}")
+              else "Too late to cancel: it has already gone out.", "success")
+        return redirect(back)
+
+    if action in ("queue", "send_now"):
+        # Confirming the draft you previewed: nothing in the form changes it.
+        def confirm(rows):
+            for r in rows:
+                if state_repo.slugify(r["company_name"]) == slug and r.get("referral_status") == "draft":
+                    r["referral_status"] = "queued"
+                    return r
+            return None
+        row = state_repo.mutate_queue(confirm, f"Queue referral for {slug}")
+        if row is None:
+            flash("Preview the email first.", "error")
+            return redirect(back)
+        if action == "send_now":
+            try:
+                state_repo.dispatch_workflow(SEND_WORKFLOW, {"mode": "referrals"})
+            except state_repo.TokenPermissionError:
+                flash(f"Queued, but GitHub refused to start a send now, so it goes out with the next send "
+                      f"({next_send_run(utcnow()):%a %H:%M}). Give your GITHUB_TOKEN Actions: Read and write to fix.", "error")
+            else:
+                flash(f"Sending to {row['referral_email']} now. It takes a couple of minutes; "
+                      f"refresh to see it marked sent.", "success")
+        else:
+            flash(f"Queued: goes to {row['referral_email']} with the next send ({next_send_run(utcnow()):%a %d %b, %H:%M}).",
+                  "success")
+        return redirect(back)
+
+    # action == "preview": validate and save as a draft (never sent as-is).
+    email = (f.get("referral_email") or "").strip()
+    who = (f.get("referral_by") or "").strip()[:60]
+    track = f.get("track", "")
+    attach = f.get("referral_attach", "both")
+    errors = []
+    if not EMAIL_RE.match(email):
+        errors.append("Enter the address they asked you to send to.")
+    if track not in tracks:
+        errors.append("Pick one of your roles.")
+    if attach not in REFERRAL_ATTACH_LINE:
+        errors.append("Choose what to attach.")
+    elif attach in ("both", "cv") and track in tracks and safe_call(state_repo.cv_size, tracks[track]["cv_path"]) is None:
+        errors.append(f"The {track} role has no CV yet. Upload it on its Roles page, or attach the cover letter only.")
+    if errors:
+        for e in errors:
+            flash(e, "error")
+        return redirect(back)
+
+    def draft(rows):
+        for r in rows:
+            if state_repo.slugify(r["company_name"]) != slug:
+                continue
+            r.update({"referral_email": email, "referral_by": who, "referral_attach": attach,
+                      "referral_status": "draft", "referral_note": "", "track": track})
+            # Their answer was the referral: count it as a reply, so no
+            # automatic follow-up chases them.
+            if not is_yes(r.get("replied")):
+                r["replied"] = "yes"
+                r["reply_note"] = f"replied with a referral to {email}"
+            return True
+        return False
+    if not state_repo.mutate_queue(draft, f"Draft referral for {slug}"):
+        flash("That company isn't in the queue any more.", "error")
+        return redirect(url_for("companies_list"))
+    return redirect(back)
 
 
 @app.route("/companies/<slug>/resolve", methods=["POST"])

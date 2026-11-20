@@ -19,7 +19,8 @@ class EmailSender:
             raise ValueError("SENDER_EMAIL or GMAIL_APP_PASSWORD is missing in configuration.")
 
     def send_outreach_email(self, recipient_email, company_name, cover_letter_path, cv_path,
-                            role_title=applicant.ROLE_TITLE, subject=None, body=None):
+                            role_title=applicant.ROLE_TITLE, subject=None, body=None,
+                            attach_letter=True, attach_cv=True):
         """
         Sends an outreach email with the CV and cover letter attached.
 
@@ -29,7 +30,13 @@ class EmailSender:
         `subject` and `body` override the campaign template, so an application
         answering one specific advertised role can reuse this sender rather than
         duplicating the SMTP, attachment, and Message-ID handling.
+
+        `attach_letter` / `attach_cv` choose the attachments (a referral can ask
+        for the CV only). Whatever is chosen must exist, or nothing is sent.
         """
+        if not (attach_letter or attach_cv):
+            print("[EmailSender] Error: nothing to attach.")
+            return None
         if not recipient_email:
             print("[EmailSender] Error: Recipient email is empty.")
             return None
@@ -46,7 +53,9 @@ class EmailSender:
         msg.set_content(body or applicant.build_outreach_body(company_name))
 
         # Attach Cover Letter
-        if os.path.exists(cover_letter_path):
+        if not attach_letter:
+            pass
+        elif cover_letter_path and os.path.exists(cover_letter_path):
             with open(cover_letter_path, "rb") as f:
                 file_data = f.read()
                 file_name = os.path.basename(cover_letter_path)
@@ -57,7 +66,9 @@ class EmailSender:
 
         # Attach CV under one neutral name whichever track's file it is, so the
         # recipient never sees "cv_software.pdf" and infers other versions exist.
-        if cv_path and os.path.exists(cv_path):
+        if not attach_cv:
+            pass
+        elif cv_path and os.path.exists(cv_path):
             with open(cv_path, "rb") as f:
                 file_data = f.read()
             msg.add_attachment(file_data, maintype="application", subtype="pdf",

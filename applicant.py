@@ -226,6 +226,44 @@ def build_outreach_body(company_name, track=None):
     )
 
 
+# What a referral can carry. "both" is the default and almost always right;
+# "letter" alone only makes sense when they already have your CV.
+REFERRAL_ATTACHMENTS = {
+    "both": "My CV and cover letter are attached.",
+    "cv": "My CV is attached.",
+    "letter": "My cover letter is attached, and I am happy to send my CV as well.",
+}
+
+
+def referral_subject(track=None):
+    return f"Application: {get_track(track)['role_title']} \u2013 {FULL_NAME}"
+
+
+def build_referral_body(company_name, track=None, referred_by="", attach="both"):
+    """
+    The email for when a company replies "send your application to X".
+    Shorter than the cold email: they asked for it, so it opens with who
+    pointed you there and gets to the point. Built from the role's own pitch
+    (credentials, top highlights), so it matches the CV it carries.
+    """
+    t = get_track(track)
+    who = (referred_by or "").strip()
+    opener = (f"{who} from your team kindly suggested I send my application to this address."
+              if who else "I was asked to send my application to this address.")
+    highlights = "\n".join(f"- {h}" for h in t["highlights"][:3])
+    return (
+        f"Dear {company_name} Recruitment Team,\n\n"
+        f"{opener}\n\n"
+        f"My name is {FULL_NAME}. I am {t['credentials']}. I would like to be considered "
+        f"for {t['interest_area']} roles at {company_name}.\n\n"
+        f"Some highlights of my work:\n"
+        f"{highlights}\n\n"
+        f"{REFERRAL_ATTACHMENTS.get(attach, REFERRAL_ATTACHMENTS['both'])} "
+        f"Thank you for your time and consideration.\n\n"
+        f"{signature_block()}"
+    )
+
+
 def build_followup_body(company_name, recipient_name, original_date, track=None):
     """The 6-day check-in, with the original message quoted underneath."""
     t = get_track(track)

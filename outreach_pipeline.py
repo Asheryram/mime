@@ -30,7 +30,11 @@ QUEUE_FIELDS = [
     "recipient_name", "company_address", "status",
     "date_added", "date_sent", "date_followup", "message_id",
     "track", "lead_reviewed", "replied", "bounced", "review_notified",
-    "role_reason", "role_review", "email_note", "reply_note"
+    "role_reason", "role_review", "email_note", "reply_note",
+    # A company that answered "send your application to X": the follow-on
+    # email to X, queued from the dashboard. One row per company throughout.
+    "referral_email", "referral_by", "referral_attach", "referral_status",
+    "referral_date", "referral_message_id", "referral_replied", "referral_note"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -860,6 +864,84 @@ def run_send_emails():
             
     print(f"[Pipeline] Run complete. Sent: {sent_count}, Failed: {failed_count}.")
 
+def run_send_referrals():
+    """
+    Send queued referrals: the application a company asked for at another
+    address ("please send your CV to recruitment@..."). Queued from the
+    company's dashboard page. Not counted against the daily cap (you chose
+    each one), and never followed up automatically: they told you where to
+    apply, so chasing would be pushy.
+    """
+    queue = load_queue()
+    due = [r for r in queue if r.get("referral_status") == "queued"]
+    if not due:
+        print("[Referral] Nothing queued.")
+        return
+
+    try:
+        smtp, _ = smtp_client.connect()
+        smtp.quit()
+    except GmailAuthError as e:
+        print(f"[Referral] Not sending: {e}. They stay queued.")
+        sys.exit(1)
+
+    sender_service = get_sender()
+    for r in due:
+        to = (r.get("referral_email") or "").strip()
+        attach = r.get("referral_attach") or "both"
+        want_cv, want_letter = attach in ("both", "cv"), attach in ("both", "letter")
+        problem = None
+        if "@" not in to:
+            problem = "no valid address"
+        elif attach not in applicant.REFERRAL_ATTACHMENTS:
+            problem = f"unknown attachment choice '{attach}'"
+        elif r["track"] not in applicant.TRACKS:
+            problem = f"its role '{r['track']}' no longer exists"
+        elif want_cv and not os.path.exists(applicant.cv_path_for(r["track"]) or ""):
+            problem = f"no CV for role '{r['track']}'"
+        if problem:
+            r["referral_status"], r["referral_note"] = "failed", problem
+            print(f"[Referral] Not sending to {r['company_name']}: {problem}.")
+            save_queue(queue)
+            continue
+
+        pdf_path = os.path.join(LETTERS_DIR, "referral_" + letter_filename(r["company_name"]))
+        if want_letter:
+            os.makedirs(LETTERS_DIR, exist_ok=True)
+            generator.generate_pdf(
+                company_name=r["company_name"],
+                role_title=applicant.get_track(r["track"])["role_title"],
+                company_type=r["company_type"],
+                recipient_name="The Recruitment Team",
+                company_address=r["company_address"],
+                output_path=pdf_path,
+                track=r["track"],
+            )
+        try:
+            message_id = sender_service.send_outreach_email(
+                recipient_email=to,
+                company_name=r["company_name"],
+                cover_letter_path=pdf_path,
+                cv_path=applicant.cv_path_for(r["track"]),
+                role_title=applicant.get_track(r["track"])["role_title"],
+                subject=applicant.referral_subject(r["track"]),
+                body=applicant.build_referral_body(r["company_name"], r["track"], r.get("referral_by", ""), attach),
+                attach_letter=want_letter, attach_cv=want_cv,
+            )
+        except GmailAuthError as e:
+            print(f"[Referral] Stopping: {e}. The rest stay queued.")
+            sys.exit(1)
+        if message_id:
+            r.update({"referral_status": "sent", "referral_message_id": message_id,
+                      "referral_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "referral_note": ""})
+            log_outreach(dict(r, email=to), "REFERRAL")
+            print(f"[Referral] Sent {r['company_name']}'s application to {to} ({attach}).")
+        else:
+            r["referral_status"], r["referral_note"] = "failed", "Gmail didn't accept it; queue it again to retry"
+            print(f"[Referral] Failed to send to {to}.")
+        save_queue(queue)
+
+
 def log_outreach(row, status):
     """
     Logs successful or failed emails to outreach_log.csv
@@ -916,6 +998,7 @@ Commands:
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
   auto-approve   - Promote every Pending row with a usable email to Approved (no human review;
               for the scheduled CI pipeline only, not recommended for interactive use)
+  send-referrals - Send applications queued from a company's "They referred me" panel
   check-inbox    - Read the sending Gmail (read-only) and mark replies and bounces automatically
   notify-review  - Email a summary of Review/no-email-found rows that need a human, each only once
   generate  - Compile ReportLab cover letter PDFs for companies with emails in the queue
@@ -967,6 +1050,8 @@ if __name__ == "__main__":
         run_auto_approve()
     elif cmd == "check-inbox":
         run_check_inbox()
+    elif cmd == "send-referrals":
+        run_send_referrals()
     elif cmd == "notify-review":
         run_notify_needs_review()
     elif cmd == "generate":
