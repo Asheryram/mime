@@ -264,6 +264,34 @@ def build_referral_body(company_name, track=None, referred_by="", attach="both")
     )
 
 
+def checkin_subject(track=None):
+    return f"Checking in: {get_track(track)['role_title']} \u2013 {FULL_NAME}"
+
+
+def build_checkin_body(company_name, track=None, replied_month=""):
+    """
+    For a company that said "not now, maybe later": a short, no-pressure
+    check-in months on. It reminds them they replied (so it reads as a
+    continuation, not a new cold email), carries the role's top highlights,
+    and attaches only the CV: they've already read your letter.
+    """
+    t = get_track(track)
+    when = f"In {replied_month} you" if replied_month else "You"
+    highlights = "\n".join(f"- {h}" for h in t["highlights"][:2])
+    return (
+        f"Dear {company_name} team,\n\n"
+        f"{when} kindly replied that {company_name} wasn't ready to recruit yet, and that you "
+        f"might be in touch when you were. I wanted to check in in case that has changed: "
+        f"I am still very interested in {t['interest_area']} roles at {company_name}.\n\n"
+        f"As a reminder, I am {t['credentials']}. Some recent highlights:\n"
+        f"{highlights}\n\n"
+        f"My current CV is attached. If now isn't the right time either, that's no problem at all; "
+        f"I'd be glad to hear from you whenever you're ready.\n\n"
+        f"Thank you, and best wishes with everything at {company_name}.\n\n"
+        f"{signature_block()}"
+    )
+
+
 def build_followup_body(company_name, recipient_name, original_date, track=None):
     """The 6-day check-in, with the original message quoted underneath."""
     t = get_track(track)

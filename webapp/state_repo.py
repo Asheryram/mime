@@ -41,6 +41,8 @@ QUEUE_FIELDS = [
     "role_reason", "role_review", "email_note", "reply_note",
     "referral_email", "referral_by", "referral_attach", "referral_status",
     "referral_date", "referral_message_id", "referral_replied", "referral_note",
+    "outcome", "outcome_date", "checkback_date", "checkback_status", "checkback_sent_date",
+    "checkback_message_id", "checkback_replied", "checkback_note", "checkback_notified",
 ]
 
 

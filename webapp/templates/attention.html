@@ -59,6 +59,8 @@
             why: "The page title didn't give a name the scraper could trust in a “Dear … team” letter. Check the site and type the real one. Add an email if you have it; otherwise the next scrape looks for one." },
     failed: { label: "Send failed", short: "Send failed",
               why: "Gmail refused or dropped the connection when this was sent. Usually temporary. Fix the address if it looks wrong, then retry at the next send." },
+    checkback: { label: "Time to check back", short: "Check back",
+                 why: "They said \u201cnot now\u201d and you asked to be reminded today. A short check-in is drafted on the company page: read it, then send it or push it back." },
     role: { label: "Choose a role", short: "Choose role",
             why: "The site didn't clearly fit one role, so this waits for you instead of guessing. Open the site, pick the pitch (and CV) it should get, and it rejoins the queue." }
   };
@@ -103,9 +105,9 @@
 
   function renderFilters() {
     els.filters.innerHTML = "";
-    var counts = { all: items.length, role: 0, email: 0, name: 0, failed: 0 };
+    var counts = { all: items.length, checkback: 0, role: 0, email: 0, name: 0, failed: 0 };
     items.forEach(function (i) { counts[i.reason]++; });
-    [["all", "All"], ["role", "Choose role"], ["email", "No email"], ["name", "Unclear name"], ["failed", "Send failed"]].forEach(function (f) {
+    [["all", "All"], ["checkback", "Check back"], ["role", "Choose role"], ["email", "No email"], ["name", "Unclear name"], ["failed", "Send failed"]].forEach(function (f) {
       if (f[0] !== "all" && !counts[f[0]] && filter !== f[0]) return;
       els.filters.appendChild(h("a", {
         href: "#", role: "tab", "aria-selected": filter === f[0] ? "true" : "false",
@@ -179,6 +181,17 @@
       ? h("div", { class: "sugg" }, ["From the domain:", chip(i.name_suggestion, nameInput)]) : null;
 
     var fields = [];
+    if (i.reason === "checkback") {
+      // The draft and its Send / Snooze buttons live on the company page.
+      els.detail.appendChild(h("div", { class: "t-head" }, [
+        h("div", {}, [h("h2", { text: i.name }), h("span", { class: "reason checkback", text: r.label })])]));
+      els.detail.appendChild(h("p", { class: "t-why", text: r.why }));
+      els.detail.appendChild(h("div", { class: "t-actions" }, [
+        h("a", { class: "btn primary", href: URL_DETAIL.replace("__S__", i.slug) + "#reply", text: "Read the check-in" }),
+        h("button", { type: "button", class: "ghost", on: { click: function () { move(1); } } }, ["Skip", h("kbd", { text: "j" })]),
+        h("span", { class: "progress", text: pos + " / " + list.length })]));
+      return;
+    }
     if (i.reason === "role") {
       var roleSelect = h("select", { id: "t-role", name: "track" }, i.tracks.map(function (t) {
         return h("option", { value: t, selected: t === i.track, text: t + (t === i.track ? " (best guess)" : "") });

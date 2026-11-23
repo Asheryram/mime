@@ -15,6 +15,9 @@ from urllib.parse import quote, urlparse
 
 # Order = how quick each fix is (pick from a list, type an address, check a name).
 GROUPS = [
+    ("checkback", "Time to check back",
+     "They said \u201cnot now\u201d and you asked to be reminded today. A short check-in is drafted: "
+     "read it and send, or push it back."),
     ("role", "Choose a role",
      "No role clearly fit, so these wait for you instead of being sent on a guess. "
      "Pick the pitch and CV each should get."),
@@ -45,6 +48,8 @@ def host_of(url):
 
 def reason_of(r, known_tracks):
     """Which group a row belongs in."""
+    if r.get("outcome") == "later" and r["status"] in ("Sent", "Followup-Sent"):
+        return "checkback"
     if r["status"] == "Review":
         return "name"
     if r["status"] == "Skipped":
@@ -55,6 +60,10 @@ def reason_of(r, known_tracks):
 def detail_of(r, reason, known_tracks):
     """(why, hint): one line of evidence and one line of help for this row."""
     host = host_of(r.get("website"))
+    if reason == "checkback":
+        when = (r.get("outcome_date") or "")[:10]
+        return (f"Replied {when}: not hiring yet, maybe later." if when else "Said not hiring yet, maybe later."), \
+            "Check-in drafted, CV attached"
     if reason == "role":
         track = r.get("track") or ""
         if track and track not in known_tracks:
@@ -76,6 +85,8 @@ def detail_of(r, reason, known_tracks):
 
 def subject_for(counts, total):
     parts = []
+    if counts.get("checkback"):
+        parts.append(f"{counts['checkback']} to check back with")
     if counts.get("role"):
         parts.append(f"{counts['role']} to choose a role")
     if counts.get("email"):
@@ -100,7 +111,11 @@ def build(rows, known_tracks, dashboard_url="", earlier_waiting=0):
     subject = subject_for(counts, total)
 
     def fix_url(r):
-        return f"{base}/attention?focus={quote(slugify(r['company_name']))}" if base else ""
+        if not base:
+            return ""
+        if reason_of(r, known_tracks) == "checkback":  # the draft lives on the company page
+            return f"{base}/companies/{quote(slugify(r['company_name']))}#reply"
+        return f"{base}/attention?focus={quote(slugify(r['company_name']))}"
 
     # ---- plain text -------------------------------------------------------
     t = [subject + ".", "Nothing goes out to these until you act. Each takes under a minute.", ""]
@@ -151,7 +166,7 @@ def build(rows, known_tracks, dashboard_url="", earlier_waiting=0):
       <div style="font-size:14px;color:{INK};margin-top:8px;line-height:1.45">{escape(why)}</div>
       {f'<div style="font-size:13px;color:{MUTED};margin-top:4px">{escape(hint)}</div>' if hint else ''}
     </td>
-    {f'<td style="vertical-align:middle;padding-left:12px;width:1%">{button(fix, "Fix")}</td>' if fix else ''}
+    {f'<td style="vertical-align:middle;padding-left:12px;width:1%">{button(fix, "Read" if key == "checkback" else "Fix")}</td>' if fix else ''}
   </tr></table>
 </td></tr>
 <tr><td style="height:8px;line-height:8px;font-size:0">&nbsp;</td></tr>""")

@@ -13,7 +13,7 @@ on:
         # "referrals" is what the dashboard's "Send now" on a referral uses:
         # it sends queued referrals and nothing else, so it can't send the
         # day's batch early or twice.
-        description: "full = the normal daily run; referrals = only queued referrals"
+        description: "full = the normal daily run; referrals = only referrals and check-ins you just sent"
         type: choice
         options: [full, referrals]
         default: full
@@ -91,6 +91,10 @@ jobs:
         # Applications a company asked you to send to another address,
         # queued from that company's dashboard page.
         run: python3 outreach_pipeline.py send-referrals
+
+      - name: Send approved check-ins
+        # Companies that said "not now": only ones you read and pressed Send on.
+        run: python3 outreach_pipeline.py send-checkins
 
       - name: Auto-approve clean leads
         if: ${{ inputs.mode != 'referrals' }}

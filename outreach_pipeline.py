@@ -34,7 +34,11 @@ QUEUE_FIELDS = [
     # A company that answered "send your application to X": the follow-on
     # email to X, queued from the dashboard. One row per company throughout.
     "referral_email", "referral_by", "referral_attach", "referral_status",
-    "referral_date", "referral_message_id", "referral_replied", "referral_note"
+    "referral_date", "referral_message_id", "referral_replied", "referral_note",
+    # What their reply said (interview / later / declined), and for "later",
+    # when to check back and how that check-in went.
+    "outcome", "outcome_date", "checkback_date", "checkback_status", "checkback_sent_date",
+    "checkback_message_id", "checkback_replied", "checkback_note", "checkback_notified"
 ]
 
 DAILY_SEND_LIMIT = 15
@@ -681,6 +685,10 @@ def run_notify_needs_review():
         and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found")
              or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
     ]
+    # Companies that said "not now" whose check-back date has come: once each
+    # (their own flag, since review_notified may be set from long ago).
+    checkins = [r for r in queue if checkin_due(r) and r.get("checkback_notified", "").strip().lower() != "yes"]
+    needs_review += checkins
 
     if not needs_review:
         print("[Pipeline] No new rows need review.")
@@ -718,7 +726,10 @@ def run_notify_needs_review():
         return
 
     for r in needs_review:
-        r["review_notified"] = "yes"
+        if r in checkins:
+            r["checkback_notified"] = "yes"
+        else:
+            r["review_notified"] = "yes"
     save_queue(queue)
     print(f"[Pipeline] Sent review notification for {count} compan{'y' if count == 1 else 'ies'}.")
 
@@ -942,6 +953,74 @@ def run_send_referrals():
         save_queue(queue)
 
 
+def _month_of(date_str):
+    try:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").strftime("%B %Y")
+    except (ValueError, TypeError):
+        return ""
+
+
+def run_send_checkins():
+    """
+    Send check-ins you approved on the dashboard: companies that said "not
+    now, maybe later" and whose check-back date came round. Only ever sent
+    after you've read the draft and pressed Send; CV only (they've read your
+    letter); not counted against the daily cap.
+    """
+    queue = load_queue()
+    due = [r for r in queue if r.get("checkback_status") == "queued"]
+    if not due:
+        print("[Check-in] Nothing queued.")
+        return
+    try:
+        smtp, _ = smtp_client.connect()
+        smtp.quit()
+    except GmailAuthError as e:
+        print(f"[Check-in] Not sending: {e}. They stay queued.")
+        sys.exit(1)
+
+    sender_service = get_sender()
+    for r in due:
+        problem = None
+        if "@" not in (r.get("email") or ""):
+            problem = "no email address on this company"
+        elif r["track"] not in applicant.TRACKS:
+            problem = f"its role '{r['track']}' no longer exists"
+        elif not os.path.exists(applicant.cv_path_for(r["track"]) or ""):
+            problem = f"no CV for role '{r['track']}'"
+        if problem:
+            r["checkback_status"], r["checkback_note"] = "failed", problem
+            print(f"[Check-in] Not sending to {r['company_name']}: {problem}.")
+            save_queue(queue)
+            continue
+        try:
+            message_id = sender_service.send_outreach_email(
+                recipient_email=r["email"], company_name=r["company_name"],
+                cover_letter_path="", cv_path=applicant.cv_path_for(r["track"]),
+                subject=applicant.checkin_subject(r["track"]),
+                body=applicant.build_checkin_body(r["company_name"], r["track"], _month_of(r.get("outcome_date", ""))),
+                attach_letter=False, attach_cv=True,
+            )
+        except GmailAuthError as e:
+            print(f"[Check-in] Stopping: {e}. The rest stay queued.")
+            sys.exit(1)
+        if message_id:
+            r.update({"checkback_status": "sent", "checkback_message_id": message_id, "checkback_note": "",
+                      "checkback_sent_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+            log_outreach(r, "CHECK-IN")
+            print(f"[Check-in] Sent to {r['company_name']} ({r['email']}).")
+        else:
+            r["checkback_status"], r["checkback_note"] = "failed", "Gmail didn't accept it; send it again to retry"
+        save_queue(queue)
+
+
+def checkin_due(r, today=None):
+    """Said "not now", the check-back date has come, and nothing's been done yet."""
+    today = today or datetime.now().strftime("%Y-%m-%d")
+    return (r.get("outcome") == "later" and not r.get("checkback_status")
+            and bool(r.get("checkback_date")) and r["checkback_date"] <= today)
+
+
 def log_outreach(row, status):
     """
     Logs successful or failed emails to outreach_log.csv
@@ -998,6 +1077,7 @@ Commands:
   scrape    - Crawl websites of Pending companies using Apify to harvest contact emails
   auto-approve   - Promote every Pending row with a usable email to Approved (no human review;
               for the scheduled CI pipeline only, not recommended for interactive use)
+  send-checkins  - Send check-ins you approved for companies that said "not now"
   send-referrals - Send applications queued from a company's "They referred me" panel
   check-inbox    - Read the sending Gmail (read-only) and mark replies and bounces automatically
   notify-review  - Email a summary of Review/no-email-found rows that need a human, each only once
@@ -1052,6 +1132,8 @@ if __name__ == "__main__":
         run_check_inbox()
     elif cmd == "send-referrals":
         run_send_referrals()
+    elif cmd == "send-checkins":
+        run_send_checkins()
     elif cmd == "notify-review":
         run_notify_needs_review()
     elif cmd == "generate":

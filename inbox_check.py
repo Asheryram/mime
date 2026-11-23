@@ -224,6 +224,12 @@ def check_inbox(queue, user, password, **kw):
             rows.append({"company_name": r["company_name"], "email": r["referral_email"].strip(),
                          "message_id": r.get("referral_message_id", ""),
                          "date_sent": r.get("referral_date", ""), "_referral_of": r})
+        # Check-ins to companies that said "not now": watched the same way.
+        if (r.get("checkback_status") == "sent" and "@" in (r.get("email") or "")
+                and r.get("checkback_replied", "").strip().lower() != "yes"):
+            rows.append({"company_name": r["company_name"], "email": r["email"].strip(),
+                         "message_id": r.get("checkback_message_id", ""),
+                         "date_sent": r.get("checkback_sent_date", ""), "_checkin_of": r})
     if not rows:
         return [], []
     sent_dates = [d for d in (_sent_at(r) for r in rows) if d]
@@ -233,6 +239,15 @@ def check_inbox(queue, user, password, **kw):
     replied, bounced = [], []
     for i, (kind, note) in classify(messages, rows, user).items():
         r = rows[i]
+        if "_checkin_of" in r:
+            row = r["_checkin_of"]
+            if kind == "replied":
+                row["checkback_replied"] = "yes"
+            else:
+                row["checkback_status"] = "bounced"
+            row["checkback_note"] = f"auto-detected: {note}"
+            (replied if kind == "replied" else bounced).append(f"{r['company_name']} (check-in)")
+            continue
         if "_referral_of" in r:
             row = r["_referral_of"]
             if kind == "replied":
