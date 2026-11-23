@@ -66,6 +66,10 @@ Before each send and every scrape, `check-inbox` reads the sending Gmail (`SENDE
 
 Detected marks show as *replied (auto)* with what was found; marks you make by hand are never undone. If the inbox can't be checked, new applications still go out but **follow-ups are skipped** that run. A reply from an unrelated address with a fresh subject (a recruiter's personal Gmail) can't be linked: mark those by hand.
 
+### "Not now, maybe later" replies
+
+On a company's page, **Their reply** records what they said: *Interview / next steps*, *Not hiring now: check back later*, or *Not interested*. For "later", choose when to check back (1, 3 or 6 months, or a date). On that date the company returns to **Needs you** and the review email with a short check-in drafted: it reminds them when they replied, says you're still interested, and attaches your current CV. Nothing is sent until you read it and press **Send now**; you can also push it back a month or skip it. Replies to the check-in are detected automatically.
+
 ### When a company refers you elsewhere
 
 Replies like *"please send your CV to recruitment@..."* are handled from that company's page: **They referred me** takes the new address, who referred you (their name opens the email: *"Agyeiwaa from your team kindly suggested..."*), the role, and what to attach: **CV + cover letter** (recommended), **CV only**, or **cover letter only** (rarely right). **Preview email** shows the exact message; nothing is sent until you press **Send now** (starts a referrals-only run within minutes) or **Send with next batch**.

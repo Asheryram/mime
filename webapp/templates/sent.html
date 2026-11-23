@@ -25,7 +25,10 @@
           <td class="nowrap muted">{{ c.date_sent|day }}</td>
           <td class="nowrap muted">{{ c.date_followup|day if c.date_followup else ("pending" if c.status == "Sent" else "") }}</td>
           <td class="nowrap">
-            {% if c.replied == "yes" %}<span class="pill replied" {% if c.reply_note %}title="{{ c.reply_note }}"{% endif %}>replied{{ ' (auto)' if (c.reply_note or '').startswith('auto-detected') }}</span>
+            {% if c.outcome == "interview" %}<span class="pill replied">interview</span>
+            {% elif c.outcome == "later" and c.checkback_status != "sent" %}<span class="pill later" title="Check back {{ c.checkback_date }}">later{{ (': ' ~ c.checkback_date[5:]) if c.checkback_date }}</span>
+            {% elif c.outcome == "declined" %}<span class="pill bounced">declined</span>
+            {% elif c.replied == "yes" %}<span class="pill replied" {% if c.reply_note %}title="{{ c.reply_note }}"{% endif %}>replied{{ ' (auto)' if (c.reply_note or '').startswith('auto-detected') }}</span>
             {% elif c.bounced == "yes" %}<span class="pill bounced" {% if c.reply_note %}title="{{ c.reply_note }}"{% endif %}>bounced{{ ' (auto)' if (c.reply_note or '').startswith('auto-detected') }}</span>
             {% else %}<span class="pill later">waiting</span>{% endif %}
           </td>

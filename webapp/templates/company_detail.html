@@ -61,7 +61,7 @@
             <input type="hidden" name="status" value="Pending"><input type="hidden" name="next" value="{{ url_for('company_detail', slug=c.slug) }}">
             <button type="submit" class="sm">Put back in the queue</button>
           </form>
-        {% elif c.bucket in ("upcoming", "scraping", "attention") %}
+        {% elif c.bucket in ("upcoming", "scraping", "attention") and c.status not in ("Sent", "Followup-Sent") %}
           <form method="post" action="{{ url_for('company_status', slug=c.slug) }}" class="inline">
             <input type="hidden" name="status" value="Rejected"><input type="hidden" name="next" value="{{ url_for('company_detail', slug=c.slug) }}">
             <button type="submit" class="ghost sm">Don't email this one</button>
@@ -69,6 +69,73 @@
         {% endif %}
       </div>
     </section>
+
+    {% if c.status in ("Sent", "Followup-Sent") %}
+    {% set cs = c.checkback_status %}
+    <section class="panel card-box" id="reply">
+      <div class="panel-head"><h2>Their reply</h2></div>
+
+      {% if checkin_is_due and checkin_preview %}
+        <div class="callout info"><b>Time to check back.</b> On {{ c.outcome_date|longdate }} they said they weren't hiring yet. Here's a short check-in, with your current CV attached. Nothing goes out until you press Send.</div>
+        <dl class="kv">
+          <dt>To</dt><dd class="mono">{{ c.email }}</dd>
+          <dt>Subject</dt><dd>{{ checkin_preview.subject }}</dd>
+          <dt>Attached</dt><dd>CV ({{ c.track }} role)</dd>
+        </dl>
+        <pre style="white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; margin: 10px 0 4px;">{{ checkin_preview.body }}</pre>
+        <p class="small muted" style="margin: 0 0 12px;">Your signature is added when it's sent.</p>
+        <div class="row-actions">
+          {% for action, label, cls in [("send_now", "Send now", "sm"), ("snooze", "Remind me in a month", "ghost sm"), ("skip", "Don't check back", "ghost sm")] %}
+          <form method="post" action="{{ url_for('company_reply', slug=c.slug) }}" class="inline">
+            <input type="hidden" name="action" value="{{ action }}"><button type="submit" class="{{ cls }}">{{ label }}</button>
+          </form>
+          {% endfor %}
+        </div>
+
+      {% elif cs == "queued" %}
+        <div class="callout info">Check-in queued to <b>{{ c.email }}</b>: it goes out within minutes, or with the next send.</div>
+        <form method="post" action="{{ url_for('company_reply', slug=c.slug) }}" class="inline">
+          <input type="hidden" name="action" value="cancel"><button type="submit" class="ghost sm">Cancel</button>
+        </form>
+
+      {% else %}
+        {% if cs == "sent" %}
+          <div class="callout info">Check-in sent {{ c.checkback_sent_date|longdate }}.
+            {% if c.checkback_replied == "yes" %}<b>They replied.</b>{% else %}No reply yet; replies are picked up automatically.{% endif %}
+            {% if c.checkback_note %}<br><span class="small">{{ c.checkback_note[0]|upper }}{{ c.checkback_note[1:] }}</span>{% endif %}</div>
+        {% elif cs in ("failed", "bounced") %}
+          <div class="callout warn">The check-in wasn't delivered{% if c.checkback_note %}: {{ c.checkback_note }}{% endif %}.</div>
+        {% elif cs == "skipped" %}
+          <p class="hint">You chose not to check back. Pick "Not hiring now" again to schedule a new one.</p>
+        {% elif c.outcome == "later" and c.checkback_date %}
+          <div class="callout info">You'll be reminded to check back on <b>{{ c.checkback_date|longdate }}</b>, with an email drafted.</div>
+        {% elif not c.outcome %}
+          <p class="hint">Got an answer? Record what they said. For “not now, maybe later”, you'll be reminded to check back on the date you choose.</p>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('company_reply', slug=c.slug) }}">
+          <input type="hidden" name="action" value="save">
+          {% for key, label, hint in outcomes %}
+          <label class="check" style="display:block; margin: 8px 0;">
+            <input type="radio" name="outcome" value="{{ key }}" {{ 'checked' if key == c.outcome }} {{ 'required' if loop.first }}>
+            <b>{{ label }}</b> <span class="small muted">{{ hint }}</span></label>
+          {% if key == "later" %}
+          <div style="margin: 0 0 10px 26px;" class="small">
+            Check back in
+            {% for n, text in checkback_after %}
+              <label class="check" style="display:inline-flex; margin-right: 10px;"><input type="radio" name="checkback_in" value="{{ n }}" {{ 'checked' if n == '3' and not c.checkback_date }}> {{ text }}</label>
+            {% endfor %}
+            <label class="check" style="display:inline-flex;"><input type="radio" name="checkback_in" value="date" {{ 'checked' if c.checkback_date }}> on
+              <input type="date" name="checkback_date" value="{{ c.checkback_date }}" min="{{ today }}" style="width:auto; margin-left:6px; padding: 4px 8px;"></label>
+          </div>
+          {% endif %}
+          {% endfor %}
+          <div class="form-actions"><button type="submit" class="sm">Save</button>
+            <span class="small muted">Referred you to another address? Use “They referred me” below.</span></div>
+        </form>
+      {% endif %}
+    </section>
+    {% endif %}
 
     {% if c.status in ("Sent", "Followup-Sent") or c.referral_status %}
     {% set rs = c.referral_status %}

@@ -227,9 +227,18 @@ def role_missing(c):
     return bool(c.get("track")) and c["track"] not in current_tracks()[0]
 
 
+def checkin_due(c, today=None):
+    """Mirrors outreach_pipeline.checkin_due: said "not now", and the check-back date has come."""
+    today = today or utcnow().strftime("%Y-%m-%d")
+    return (c.get("outcome") == "later" and not c.get("checkback_status")
+            and bool(c.get("checkback_date")) and c["checkback_date"] <= today)
+
+
 def bucket_of(c):
     """Which page a row belongs on, in terms of what (if anything) it needs from you."""
     s = c["status"]
+    if s in ("Sent", "Followup-Sent") and checkin_due(c):
+        return "attention"
     if s in ("Review", "Failed") or (s == "Skipped" and not has_email(c)):
         return "attention"
     if s in ("Pending", "Approved") and (is_yes(c.get("role_review")) or role_missing(c)):
@@ -246,6 +255,8 @@ def bucket_of(c):
 
 
 def attention_reason(c):
+    if c["status"] in ("Sent", "Followup-Sent"):
+        return "checkback"
     if c["status"] == "Review":
         return "name"
     if c["status"] == "Failed":
@@ -445,6 +456,15 @@ def day_filter(value):
     return (value or "").split(" ")[0]
 
 
+@app.template_filter("longdate")
+def longdate_filter(value):
+    """'2026-11-23...' -> '23 Nov 2026'; anything unparseable is shown as is."""
+    try:
+        return datetime.strptime((value or "")[:10], "%Y-%m-%d").strftime("%-d %b %Y")
+    except ValueError:
+        return value or ""
+
+
 @app.template_filter("commit_label")
 def commit_label_filter(message):
     """CI commits end in their own timestamp; the feed already shows 'x ago'."""
@@ -534,7 +554,7 @@ def overview():
 @login_required
 def attention():
     companies, nav = load_data()
-    order = {"role": 0, "email": 1, "name": 2, "failed": 3}
+    order = {"checkback": 0, "role": 1, "email": 2, "name": 3, "failed": 4}
     tracks = track_keys()
     items = sorted(
         (triage_item(c, tracks) for c in companies if c["bucket"] == "attention"),
@@ -568,7 +588,11 @@ def attention_bulk():
                     r["role_reason"] = "best guess accepted by you"
                     done.append(slug)
                 continue
-            if action == "drop":
+            if action == "drop" and r["status"] in ("Sent", "Followup-Sent"):
+                # A due check-in: "drop" means skip the check-in, not reject
+                # a company you've already emailed.
+                r["checkback_status"] = "skipped"
+            elif action == "drop":
                 r["status"] = "Rejected"
                 done.append(slug)
             elif r["status"] == "Failed":
@@ -762,6 +786,11 @@ def company_detail(slug):
     return render_template(
         "company_detail.html", active="companies", nav=nav, c=company,
         referral_attach=REFERRAL_ATTACH,
+        outcomes=OUTCOMES, checkback_after=CHECKBACK_AFTER, checkin_is_due=checkin_due(company),
+        checkin_preview=(checkin_preview(current_tracks()[0][company["track"]], company["company_name"],
+                                         month_of(company.get("outcome_date", "")))
+                         if company.get("outcome") == "later" and company["track"] in current_tracks()[0] else None),
+        today=utcnow().strftime("%Y-%m-%d"),
         referral_preview=(referral_preview(current_tracks()[0][company["track"]], company["company_name"],
                                            company.get("referral_by", ""), company.get("referral_attach") or "both")
                           if company.get("referral_status") == "draft" and company["track"] in current_tracks()[0]
@@ -909,6 +938,167 @@ def company_referral(slug):
     if not state_repo.mutate_queue(draft, f"Draft referral for {slug}"):
         flash("That company isn't in the queue any more.", "error")
         return redirect(url_for("companies_list"))
+    return redirect(back)
+
+
+# --- Their reply: outcome and check-ins -------------------------------------------
+# Record what a company's reply said. "Not hiring now" schedules a check-in:
+# on that date the company comes back to Needs you with a short email
+# drafted, and nothing is sent until you read it and press Send.
+
+OUTCOMES = [
+    ("interview", "Interview / next steps", "They want to talk. Reply yourself; nothing automatic is sent."),
+    ("later", "Not hiring now: check back later",
+     "They're interested but not ready. You'll get a drafted check-in on the date you choose."),
+    ("declined", "Not interested", "Closed. Nothing more is sent to them."),
+]
+CHECKBACK_AFTER = [("1", "1 month"), ("3", "3 months"), ("6", "6 months")]
+
+
+def checkin_preview(role, company, replied_month=""):
+    """
+    The check-in exactly as applicant.build_checkin_body writes it, minus the
+    signature. tests/test_checkins.py keeps the two in step.
+    """
+    when = f"In {replied_month} you" if replied_month else "You"
+    highlights = "\n".join(f"- {h}" for h in role["highlights"][:2])
+    return {
+        "subject": f"Checking in: {role['role_title']} \u2013 <your name>",
+        "body": (
+            f"Dear {company} team,\n\n"
+            f"{when} kindly replied that {company} wasn't ready to recruit yet, and that you "
+            f"might be in touch when you were. I wanted to check in in case that has changed: "
+            f"I am still very interested in {role['interest_area']} roles at {company}.\n\n"
+            f"As a reminder, I am {role['credentials']}. Some recent highlights:\n"
+            f"{highlights}\n\n"
+            f"My current CV is attached. If now isn't the right time either, that's no problem at all; "
+            f"I'd be glad to hear from you whenever you're ready.\n\n"
+            f"Thank you, and best wishes with everything at {company}.\n\n"
+        ),
+    }
+
+
+def month_of(date_str):
+    try:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").strftime("%B %Y")
+    except (ValueError, TypeError):
+        return ""
+
+
+def add_months(day, months):
+    """Same day N months on, clamped to the month's end (31 Jan + 1 -> 28/29 Feb)."""
+    m = day.month - 1 + months
+    y, m = day.year + m // 12, m % 12 + 1
+    import calendar
+    return day.replace(year=y, month=m, day=min(day.day, calendar.monthrange(y, m)[1]))
+
+
+@app.route("/companies/<slug>/reply", methods=["POST"])
+@login_required
+def company_reply(slug):
+    f = request.form
+    action = f.get("action", "save")
+    back = url_for("company_detail", slug=slug) + "#reply"
+    today = utcnow().date()
+
+    def with_row(fn, message):
+        def run(rows):
+            for r in rows:
+                if state_repo.slugify(r["company_name"]) == slug:
+                    return fn(r)
+            return None
+        return state_repo.mutate_queue(run, message)
+
+    if action == "save":
+        outcome = f.get("outcome", "")
+        if outcome not in dict((k, 1) for k, _, _ in OUTCOMES) and outcome != "":
+            flash("Pick what they said.", "error")
+            return redirect(back)
+        checkback = ""
+        if outcome == "later":
+            if f.get("checkback_in") in dict(CHECKBACK_AFTER):
+                checkback = add_months(today, int(f["checkback_in"])).isoformat()
+            else:
+                try:
+                    picked = datetime.strptime(f.get("checkback_date", ""), "%Y-%m-%d").date()
+                except ValueError:
+                    flash("Choose when to check back.", "error")
+                    return redirect(back)
+                if picked <= today:
+                    flash("Pick a date after today.", "error")
+                    return redirect(back)
+                checkback = picked.isoformat()
+
+        def save(r):
+            r.update({"outcome": outcome, "outcome_date": today.isoformat() if outcome else "",
+                      "checkback_date": checkback, "checkback_status": "", "checkback_note": "",
+                      "checkback_notified": ""})
+            if outcome and not is_yes(r.get("replied")):
+                r["replied"] = "yes"
+                r["reply_note"] = r.get("reply_note") or "marked by you"
+            return r
+        if with_row(save, f"Record reply outcome for {slug}") is None:
+            flash("That company isn't in the queue any more.", "error")
+            return redirect(url_for("companies_list"))
+        msg = {"interview": "Recorded: interview / next steps. Good luck!",
+               "declined": "Recorded: not interested. Nothing more goes to them.",
+               "": "Cleared."}.get(outcome)
+        if outcome == "later":
+            msg = (f"Recorded. On {datetime.fromisoformat(checkback):%a %d %b %Y} they'll come back to "
+                   f"Needs you with a check-in drafted for you to read and send.")
+        flash(msg, "success")
+        return redirect(back)
+
+    if action == "snooze":
+        def snooze(r):
+            if r.get("outcome") != "later":
+                return None
+            r["checkback_date"] = add_months(today, 1).isoformat()
+            r["checkback_notified"] = ""
+            return r
+        r = with_row(snooze, f"Snooze check-in for {slug}")
+        flash(f"Pushed back to {datetime.fromisoformat(r['checkback_date']):%d %b %Y}." if r else "Nothing to snooze.",
+              "success" if r else "error")
+        return redirect(back)
+
+    if action == "skip":
+        with_row(lambda r: r.update({"checkback_status": "skipped"}) or r, f"Skip check-in for {slug}")
+        flash("Check-in skipped. Nothing will be sent.", "success")
+        return redirect(back)
+
+    if action == "cancel":
+        ok = with_row(lambda r: (r.update({"checkback_status": ""}) or r)
+                      if r.get("checkback_status") == "queued" else None, f"Cancel check-in for {slug}")
+        flash("Check-in cancelled; it's back to waiting for you." if ok else "Too late: it has already gone out.",
+              "success" if ok else "error")
+        return redirect(back)
+
+    if action == "send_now":
+        tracks, _ = current_tracks()
+
+        def queue_it(r):
+            if not checkin_due(r):
+                return None
+            if r["track"] not in tracks or safe_call(state_repo.cv_size, tracks[r["track"]]["cv_path"]) is None:
+                return "no_cv"
+            r["checkback_status"] = "queued"
+            return r
+        r = with_row(queue_it, f"Send check-in to {slug}")
+        if r == "no_cv":
+            flash("This company's role has no CV to attach. Upload it on the Roles page first.", "error")
+        elif r is None:
+            flash("There's no check-in due for this company.", "error")
+        else:
+            try:
+                state_repo.dispatch_workflow(SEND_WORKFLOW, {"mode": "referrals"})
+            except state_repo.TokenPermissionError:
+                flash(f"Queued, but GitHub refused to start a send now, so it goes out with the next send "
+                      f"({next_send_run(utcnow()):%a %H:%M}).", "error")
+            else:
+                flash(f"Sending the check-in to {r['email']} now. Refresh in a couple of minutes.", "success")
+        return redirect(back)
+
+    flash("Unknown action.", "error")
     return redirect(back)
 
 
