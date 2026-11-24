@@ -314,6 +314,18 @@ def signup():
             db.create_member(email, tenant, generate_password_hash(pw), datetime.now(timezone.utc).isoformat())
             session.clear()
             session.update({"authed": True, "role": "member", "email": email, "tenant": tenant})
+            # Someone whose access was removed and who has been invited back
+            # gets the same workspace (the folder is derived from their email),
+            # with everything they had. Being invited again is the owner's say-so
+            # to resume, so lift the pause that removal put on their pipeline.
+            state_repo.set_tenant(tenant)
+            prof = state_repo.get_profile()
+            if prof.get("paused"):
+                prof.pop("paused")
+                state_repo.save_profile(prof, "Invited back; pipeline resumed")
+                flash("Welcome back! Your workspace is as you left it, and your pipeline is running again.",
+                      "success")
+                return redirect(url_for("overview"))
             flash("Welcome! Start by filling in your profile: it's what your applications are signed with.",
                   "success")
             return redirect(url_for("profile"))
@@ -1963,8 +1975,8 @@ def people():
                         state_repo.save_profile(prof, "Access removed by owner; pipeline paused")
                 finally:
                     state_repo.set_tenant("")
-                flash(f"Removed {email}. Their pipeline is paused and they're signed out. Their data stays in "
-                      f"tenants/{tenant}/ in the state repo until you delete it.", "success")
+                flash(f"Removed access for {email}: they're signed out and their pipeline is paused. Their data "
+                      f"is kept in tenants/{tenant}/. Invite them again to restore everything.", "success")
             else:
                 flash(f"Removed the invite for {email}.", "success")
         return redirect(url_for("people"))

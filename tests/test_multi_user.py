@@ -165,6 +165,23 @@ class DashboardIsolationTests(unittest.TestCase):
         prof = json.loads(self.fake.files[f"tenants/{tenant}/profile.json"])
         self.assertTrue(prof["paused"], "their scheduled runs must stop too")
 
+    def test_removing_access_keeps_data_and_reinvite_restores_it(self):
+        tenant = self.friend()
+        self.c.post("/profile", data={"full_name": "Ama Mensah", "email": FRIEND})
+        self.c.post("/settings/queries", data={"queries": "ama search | 10"})
+        self.c.get("/logout")
+        self.login(OWNER, "owner-pw")
+        self.c.post("/people", data={"action": "remove", "email": FRIEND})
+        kept = {k for k in self.fake.files if k.startswith(f"tenants/{tenant}/")}
+        self.assertIn(f"tenants/{tenant}/search_queries.txt", kept, "removing access must keep their data")
+        self.assertNotIn(FRIEND, self.fdb.members)
+        self.c.post("/people", data={"action": "invite", "email": FRIEND})
+        self.c.get("/logout")
+        r = self.signup(FRIEND)
+        self.assertEqual(self.fdb.members[FRIEND]["tenant"], tenant, "same workspace back")
+        self.assertNotIn("paused", json.loads(self.fake.files[f"tenants/{tenant}/profile.json"]))
+        self.assertIn("ama search", self.c.get("/settings").data.decode())
+
     def test_people_page_is_owner_only(self):
         self.friend()
         r = self.c.post("/people", data={"action": "invite", "email": "x@gmail.com"})
