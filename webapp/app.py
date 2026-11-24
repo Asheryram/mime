@@ -1856,9 +1856,47 @@ PROFILE_FIELDS = [
     ("portfolio", "GitHub, Behance or portfolio URL", False, ""),
 ]
 SECRET_LABELS = {
-    "gmail_app_password": ("Gmail app password", "16 letters from myaccount.google.com/apppasswords (needs 2-Step Verification)."),
-    "exa_api_key": ("Exa API key", "From dashboard.exa.ai: finds companies for your searches."),
-    "apify_api_token": ("Apify API token", "From console.apify.com, Settings → API: finds their email addresses."),
+    "gmail_app_password": ("Gmail app password", "Lets the pipeline send your applications and read replies from your Gmail."),
+    "exa_api_key": ("Exa API key", "Finds companies that match your searches."),
+    "apify_api_token": ("Apify API token", "Finds those companies' contact email addresses."),
+}
+# Step-by-step "how to get this key" guides shown under each key box. Each step is
+# (text, link or "") and links open in a new tab. Keep them short and literal.
+KEY_GUIDES = {
+    "gmail_app_password": {
+        "cost": "Free",
+        "steps": [
+            ("Turn on 2-Step Verification for the Gmail you entered above (skip if it's already on).",
+             "https://myaccount.google.com/signinoptions/twosv"),
+            ("Open App passwords, signed in to that same Gmail.", "https://myaccount.google.com/apppasswords"),
+            ("Type a name such as Outbound and click Create.", ""),
+            ("Copy the 16-letter password Google shows (spaces don't matter) and paste it here. "
+             "Google only shows it once.", ""),
+            ("After saving, click Test Gmail login at the bottom of this page.", ""),
+        ],
+        "note": "This isn't your normal Gmail password, and you can delete it at App passwords any time to cut off access.",
+    },
+    "exa_api_key": {
+        "cost": "Free to start: new accounts get $10 of credit",
+        "steps": [
+            ("Create an Exa account (Google sign-in works).", "https://dashboard.exa.ai"),
+            ("Open the API keys page.", "https://dashboard.exa.ai/api-keys"),
+            ("Click Create key, name it Outbound, and copy it.", ""),
+            ("Paste it here.", ""),
+        ],
+        "note": "Check your remaining credit on the Billing page.",
+        "note_link": "https://dashboard.exa.ai/billing",
+    },
+    "apify_api_token": {
+        "cost": "Free plan: $5 of usage each month, no card needed",
+        "steps": [
+            ("Create an Apify account.", "https://console.apify.com/sign-up"),
+            ("Open Settings → API & Integrations.", "https://console.apify.com/settings/integrations"),
+            ("Copy your Personal API token (it starts with apify_api_), or create a new one named Outbound.", ""),
+            ("Paste it here.", ""),
+        ],
+        "note": "Free credit resets monthly; if it runs out, email finding pauses until the next month.",
+    },
 }
 URL_RE = re.compile(r"^https?://[^\s\"'<>]+$", re.I)
 
@@ -1949,7 +1987,7 @@ def profile():
             for e in errors:
                 flash(e, "error")
             return render_template("profile.html", active="profile", nav=nav, p={**current, **dict(f)},
-                                   fields=PROFILE_FIELDS, secret_labels=SECRET_LABELS,
+                                   fields=PROFILE_FIELDS, secret_labels=SECRET_LABELS, key_guides=KEY_GUIDES,
                                    keys_set=set(current.get("keys_set", [])), can_store_keys=can_store_keys,
                                    steps=setup_steps())
         if changes:
@@ -1961,8 +1999,28 @@ def profile():
     if not current.get("email") and g.member:
         current = {**current, "email": g.member["email"]}
     return render_template("profile.html", active="profile", nav=nav, p=current, fields=PROFILE_FIELDS,
-                           secret_labels=SECRET_LABELS, keys_set=set(current.get("keys_set", [])),
-                           can_store_keys=can_store_keys, steps=setup_steps())
+                           secret_labels=SECRET_LABELS, key_guides=KEY_GUIDES,
+                           keys_set=set(current.get("keys_set", [])), can_store_keys=can_store_keys,
+                           steps=setup_steps())
+
+
+def invite_email_body(link):
+    """The invite: what this is, the sign-up link, and what to have ready (with where to get each)."""
+    return (
+        "You've been invited to use Outbound, a job-application pipeline that finds companies, writes "
+        "tailored emails and cover letters, sends them from your own Gmail, and follows up for you.\n\n"
+        f"1. Create your account:\n{link}\n\n"
+        "2. Get these ready (about 10 minutes, all free to start). The Profile page walks you through each one:\n"
+        "   - A Gmail app password: turn on 2-Step Verification, then create one at\n"
+        "     https://myaccount.google.com/apppasswords\n"
+        "   - An Exa API key (finds companies; $10 free credit):\n"
+        "     https://dashboard.exa.ai/api-keys\n"
+        "   - An Apify API token (finds contact emails; $5 free each month):\n"
+        "     https://console.apify.com/settings/integrations\n"
+        "   - Your CV as a PDF, and a short cover letter for each kind of role you want.\n\n"
+        "3. After signing up, follow the Get set up checklist on the dashboard. Nothing is sent for you "
+        "until every step is done.\n"
+    )
 
 
 def invite_send_failure(e):
@@ -1998,11 +2056,7 @@ def people():
                 db.add_invite(email, datetime.now(timezone.utc).isoformat())
                 link = url_for("signup", email=email, _external=True)
                 try:
-                    send_email(email, "You're invited to Outbound",
-                               f"You've been invited to use Outbound, a job-application pipeline that finds "
-                               f"companies, writes tailored emails and cover letters, and follows up for you.\n\n"
-                               f"Create your account here:\n{link}\n\n"
-                               f"You'll add your own CV, Gmail app password and API keys after signing up.")
+                    send_email(email, "You're invited to Outbound", invite_email_body(link))
                     flash(f"Invited {email}. They've been emailed a sign-up link.", "success")
                 except (KeyError, smtplib.SMTPException, OSError) as e:
                     reason = invite_send_failure(e)
