@@ -414,11 +414,38 @@ def load_data():
     return companies, nav
 
 
+def member_paused():
+    """True when the signed-in member's pipeline has been paused by the owner (read once per request)."""
+    if not getattr(g, "member", None):
+        return False
+    if "member_paused" not in g:
+        g.member_paused = bool(safe_call(state_repo.get_profile, fallback={}).get("paused"))
+    return g.member_paused
+
+
+def set_member_paused(tenant, paused, why):
+    """Pause or resume a member's pipeline. Their sign-in and data are untouched; tenants.py skips paused users."""
+    state_repo.set_tenant(tenant)
+    try:
+        prof = state_repo.get_profile()
+        if bool(prof.get("paused")) == paused:
+            return False
+        if paused:
+            prof["paused"] = True
+        else:
+            prof.pop("paused", None)
+        state_repo.save_profile(prof, why)
+        return True
+    finally:
+        state_repo.set_tenant("")
+
+
 @app.context_processor
 def shell_context():
     now = utcnow()
     return {
         "is_member": bool(getattr(g, "member", None)),
+        "member_paused": member_paused(),
         "is_owner_user": is_owner(),
         "palette": getattr(g, "palette", []),
         "shell_next_send": next_send_run(now),
@@ -1391,6 +1418,10 @@ def settings_run(which):
     if not workflow:
         flash("Unknown pipeline.", "error")
         return redirect(url_for("settings"))
+    if member_paused():
+        flash("Your pipeline is paused by the dashboard's owner, so nothing will run. Ask them to resume it.",
+              "error")
+        return redirect(url_for("settings"))
     try:
         state_repo.dispatch_workflow(workflow)
     except state_repo.TokenPermissionError:
@@ -1963,24 +1994,38 @@ def people():
                 except (KeyError, smtplib.SMTPException, OSError):
                     flash(f"Invited {email}, but the invite email couldn't be sent. Send them this link: {link}",
                           "success")
+        elif action in ("pause", "resume"):
+            member = db.get_member(email)
+            if not member:
+                flash(f"{email} hasn't signed up yet, so there's no pipeline to {action}.", "error")
+            elif action == "pause":
+                set_member_paused(member["tenant"], True, "Pipeline paused by owner")
+                flash(f"Paused {email}'s pipeline: nothing is searched or sent for them. They can still sign in "
+                      f"and see their data.", "success")
+            else:
+                set_member_paused(member["tenant"], False, "Pipeline resumed by owner")
+                flash(f"Resumed {email}'s pipeline. It runs again on the next schedule.", "success")
         elif action == "remove":
+            # The rarely needed last resort: revoke the login itself. Data is kept and
+            # the pipeline paused; inviting them again restores both.
             tenant = db.remove_access(email)
             if tenant:
-                # Stop their pipeline runs too, not just their logins.
-                state_repo.set_tenant(tenant)
-                try:
-                    prof = state_repo.get_profile()
-                    if prof:
-                        prof["paused"] = True
-                        state_repo.save_profile(prof, "Access removed by owner; pipeline paused")
-                finally:
-                    state_repo.set_tenant("")
-                flash(f"Removed access for {email}: they're signed out and their pipeline is paused. Their data "
-                      f"is kept in tenants/{tenant}/. Invite them again to restore everything.", "success")
+                set_member_paused(tenant, True, "Access removed by owner; pipeline paused")
+                flash(f"Revoked {email}'s sign-in and paused their pipeline. Their data is kept in "
+                      f"tenants/{tenant}/; invite them again to restore everything.", "success")
             else:
-                flash(f"Removed the invite for {email}.", "success")
+                flash(f"Cancelled the invite for {email}.", "success")
         return redirect(url_for("people"))
-    return render_template("people.html", active="people", nav=nav, invites=safe_call(db.list_invites, fallback=[]),
+    invites = safe_call(db.list_invites, fallback=[])
+    for i in invites:
+        i["paused"] = False
+        if i["tenant"]:
+            state_repo.set_tenant(i["tenant"])
+            try:
+                i["paused"] = bool(safe_call(state_repo.get_profile, fallback={}).get("paused"))
+            finally:
+                state_repo.set_tenant("")
+    return render_template("people.html", active="people", nav=nav, invites=invites,
                            keys_ready=secretbox.available())
 
 

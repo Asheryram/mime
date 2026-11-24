@@ -165,6 +165,32 @@ class DashboardIsolationTests(unittest.TestCase):
         prof = json.loads(self.fake.files[f"tenants/{tenant}/profile.json"])
         self.assertTrue(prof["paused"], "their scheduled runs must stop too")
 
+    def test_pause_stops_pipeline_but_keeps_sign_in(self):
+        tenant = self.friend()
+        self.c.post("/profile", data={"full_name": "Ama Mensah", "email": FRIEND})
+        self.c.get("/logout")
+        self.login(OWNER, "owner-pw")
+        self.c.post("/people", data={"action": "pause", "email": FRIEND})
+        prof = lambda: json.loads(self.fake.files[f"tenants/{tenant}/profile.json"])
+        self.assertTrue(prof().get("paused"))
+        self.assertIn(FRIEND, self.fdb.members, "pausing must not revoke the login")
+        self.assertIn(b"Resume pipeline", self.c.get("/people").data)
+        self.c.get("/logout")
+        self.login(FRIEND, "friend-password")
+        r = self.c.get("/")
+        self.assertEqual(r.status_code, 200, "a paused member can still sign in")
+        self.assertIn(b"Your pipeline is paused", r.data)
+        # They can still edit their profile without un-pausing themselves.
+        self.c.post("/profile", data={"full_name": "Ama M.", "email": FRIEND})
+        self.assertTrue(prof().get("paused"))
+        before = len(self.dispatched)
+        self.c.post("/settings/run/send")
+        self.assertEqual(len(self.dispatched), before, "a paused member can't start a run")
+        self.c.get("/logout")
+        self.login(OWNER, "owner-pw")
+        self.c.post("/people", data={"action": "resume", "email": FRIEND})
+        self.assertNotIn("paused", prof())
+
     def test_removing_access_keeps_data_and_reinvite_restores_it(self):
         tenant = self.friend()
         self.c.post("/profile", data={"full_name": "Ama Mensah", "email": FRIEND})
