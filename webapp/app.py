@@ -1965,6 +1965,19 @@ def profile():
                            can_store_keys=can_store_keys, steps=setup_steps())
 
 
+def invite_send_failure(e):
+    """A short, non-secret reason an invite email failed, for the owner to act on."""
+    if isinstance(e, KeyError):
+        return f"{e.args[0]} isn't set in the dashboard's environment"
+    if isinstance(e, smtplib.SMTPAuthenticationError):
+        return "Gmail rejected GMAIL_APP_PASSWORD; make a new app password and update it in Vercel"
+    if isinstance(e, smtplib.SMTPRecipientsRefused):
+        return "Gmail refused that address"
+    if isinstance(e, (TimeoutError, OSError)) and not isinstance(e, smtplib.SMTPException):
+        return f"couldn't reach Gmail: {type(e).__name__}"
+    return f"Gmail error: {type(e).__name__}"
+
+
 # --- People (owner only) ---------------------------------------------------------------
 
 @app.route("/people", methods=["GET", "POST"])
@@ -1991,9 +2004,11 @@ def people():
                                f"Create your account here:\n{link}\n\n"
                                f"You'll add your own CV, Gmail app password and API keys after signing up.")
                     flash(f"Invited {email}. They've been emailed a sign-up link.", "success")
-                except (KeyError, smtplib.SMTPException, OSError):
-                    flash(f"Invited {email}, but the invite email couldn't be sent. Send them this link: {link}",
-                          "success")
+                except (KeyError, smtplib.SMTPException, OSError) as e:
+                    reason = invite_send_failure(e)
+                    app.logger.warning("Invite email to %s failed: %r", email, e)
+                    flash(f"Invited {email}, but the invite email couldn't be sent ({reason}). "
+                          f"Send them this link: {link}", "success")
         elif action in ("pause", "resume"):
             member = db.get_member(email)
             if not member:

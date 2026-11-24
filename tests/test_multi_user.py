@@ -208,6 +208,15 @@ class DashboardIsolationTests(unittest.TestCase):
         self.assertNotIn("paused", json.loads(self.fake.files[f"tenants/{tenant}/profile.json"]))
         self.assertIn("ama search", self.c.get("/settings").data.decode())
 
+    def test_failed_invite_email_says_why(self):
+        import smtplib
+        with mock.patch.object(self.app, "send_email",
+                               side_effect=smtplib.SMTPAuthenticationError(535, b"bad")):
+            self.login(OWNER, "owner-pw")
+            r = self.c.post("/people", data={"action": "invite", "email": "keren@gmail.com"}, follow_redirects=True)
+        self.assertIn(b"Gmail rejected GMAIL_APP_PASSWORD", r.data)
+        self.assertIn("keren@gmail.com", self.fdb.invites)
+
     def test_people_page_is_owner_only(self):
         self.friend()
         r = self.c.post("/people", data={"action": "invite", "email": "x@gmail.com"})
