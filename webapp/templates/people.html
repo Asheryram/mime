@@ -13,7 +13,7 @@
     <input type="email" name="email" placeholder="friend@gmail.com" required style="margin:0; max-width: 360px;" aria-label="Email to invite">
     <button type="submit" class="sm">Invite</button>
   </form>
-  <p class="small muted" style="margin-top:10px">Only invited emails can sign up. They're emailed a sign-up link from your Gmail. Removing access keeps their data; inviting them again restores their workspace as they left it.</p>
+  <p class="small muted" style="margin-top:10px">Only invited emails can sign up. They're emailed a sign-up link from your Gmail. <b>Pause</b> stops their pipeline (no searching or sending) but they can still sign in and see their data. <b>Revoke sign-in</b> is the last resort for locking someone out; their data is kept either way.</p>
 </section>
 
 <section class="panel card-box">
@@ -25,11 +25,22 @@
     {% for i in invites %}
       <tr>
         <td class="mono">{{ i.email }}</td>
-        <td>{% if i.tenant %}<span class="pill ok">joined {{ i.joined_at|longdate }}</span>{% else %}<span class="pill later">invited {{ i.invited_at|longdate }}</span>{% endif %}</td>
+        <td>{% if i.tenant and i.paused %}<span class="pill later">paused</span>{% elif i.tenant %}<span class="pill ok">active · joined {{ i.joined_at|longdate }}</span>{% else %}<span class="pill later">invited {{ i.invited_at|longdate }}</span>{% endif %}</td>
         <td class="mono small">{{ ('tenants/' ~ i.tenant ~ '/') if i.tenant else '' }}</td>
-        <td><form method="post" class="inline" onsubmit="return confirm('Remove access for {{ i.email }}? They are signed out at once and their pipeline is paused. Their data is kept: invite them again to restore everything.');">
-          <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ i.email }}">
-          <button type="submit" class="danger sm">Remove access</button></form></td>
+        <td class="row-actions">
+          {% if i.tenant %}
+          <form method="post" class="inline">
+            <input type="hidden" name="action" value="{{ 'resume' if i.paused else 'pause' }}"><input type="hidden" name="email" value="{{ i.email }}">
+            <button type="submit" class="sm {{ '' if i.paused else 'ghost' }}">{{ 'Resume pipeline' if i.paused else 'Pause pipeline' }}</button></form>
+          <form method="post" class="inline" onsubmit="return confirm('Revoke sign-in for {{ i.email }}? They are locked out and their pipeline is paused. Their data is kept: invite them again to restore everything. To only stop their pipeline, use Pause instead.');">
+            <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ i.email }}">
+            <button type="submit" class="danger sm">Revoke sign-in</button></form>
+          {% else %}
+          <form method="post" class="inline">
+            <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ i.email }}">
+            <button type="submit" class="danger sm">Cancel invite</button></form>
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>

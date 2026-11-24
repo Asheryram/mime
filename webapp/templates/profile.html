@@ -4,7 +4,6 @@
 {% block page_sub %}Who your applications are from. Your emails and cover letters are signed with these details and sent from your own Gmail.{% endblock %}
 {% block content %}
 {% include "_setup_steps.html" %}
-{% if p.get('paused') %}<div class="callout warn">Your pipeline is paused by the dashboard's owner: nothing is searched or sent for you.</div>{% endif %}
 <form method="post">
 <section class="panel card-box" style="max-width: 900px;">
   <div class="panel-head"><h2>Your details</h2></div>

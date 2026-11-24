@@ -27,6 +27,7 @@
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, msg in messages %}<div class="flash {{ category }}" role="status">{{ msg }}</div>{% endfor %}
       {% endwith %}
+      {% if member_paused %}<div class="callout warn" role="status"><b>Your pipeline is paused</b> by the dashboard's owner: nothing is searched or sent for you right now. You can still sign in, see and edit everything; it picks up where it left off when they resume it.</div>{% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>
