@@ -252,7 +252,8 @@ class WorkflowTests(unittest.TestCase):
                      "Send eligible follow-ups"):
             self.assertIn("inputs.mode != 'referrals'", steps[name].get("if", ""), name)
         for name in ("Mark replies and bounces from the inbox", "Send queued referrals"):
-            self.assertNotIn("if", steps[name], name)
+            # Run in both modes; skipped only when one invited user's run was asked for.
+            self.assertEqual(steps[name].get("if"), "${{ !inputs.tenant }}", name)
         names = list(steps)
         self.assertLess(names.index("Mark replies and bounces from the inbox"), names.index("Send queued referrals"))
         on = wf.get("on") or wf.get(True)

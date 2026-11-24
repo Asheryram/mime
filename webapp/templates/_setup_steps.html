@@ -1,0 +1,12 @@
+{# Getting-started checklist for an invited user; nothing sends until it's done. #}
+{% if steps and not steps|selectattr(1)|list|length == steps|length %}
+<section class="panel card-box" id="setup" style="border-color: var(--accent);">
+  <div class="panel-head"><h2>Get set up</h2><span class="count-badge">{{ steps|selectattr(1)|list|length }} / {{ steps|length }}</span></div>
+  <p class="hint">Nothing is searched or sent for you until these are done. Everything you add is yours alone.</p>
+  <ol style="margin: 0; padding-left: 20px; line-height: 2;">
+    {% for label, done, href in steps %}
+      <li>{% if done %}<span class="muted" style="text-decoration: line-through;">{{ label }}</span> ✓{% else %}<a href="{{ href }}">{{ label }}</a>{% endif %}</li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}

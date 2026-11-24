@@ -1,0 +1,44 @@
+{% extends "base_app.html" %}
+{% block title %}Profile · Outbound{% endblock %}
+{% block page_title %}Your profile{% endblock %}
+{% block page_sub %}Who your applications are from. Your emails and cover letters are signed with these details and sent from your own Gmail.{% endblock %}
+{% block content %}
+{% include "_setup_steps.html" %}
+{% if p.get('paused') %}<div class="callout warn">Your pipeline is paused by the dashboard's owner: nothing is searched or sent for you.</div>{% endif %}
+<form method="post">
+<section class="panel card-box" style="max-width: 900px;">
+  <div class="panel-head"><h2>Your details</h2></div>
+  <div class="form-grid">
+    {% for field, label, required, hint in fields %}
+    <div class="{{ 'full' if field in ('full_name', 'email') }}"><label for="{{ field }}">{{ label }}{{ '' if required else ' (optional)' }}</label>
+      <input id="{{ field }}" type="{{ 'email' if field == 'email' else ('url' if field in ('linkedin', 'portfolio') else 'text') }}" name="{{ field }}" value="{{ p.get(field, '') }}" {{ 'required' if required }}>
+      {% if hint %}<p class="small muted" style="margin:-8px 0 12px">{{ hint }}</p>{% endif %}</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel card-box" id="keys" style="max-width: 900px;">
+  <div class="panel-head"><h2>Your keys</h2></div>
+  <p class="hint">Stored encrypted, and never shown again, not even to you. To change one, paste a new value; leave a box empty to keep what's saved. You can revoke any of them at its source at any time.</p>
+  {% if not can_store_keys %}<div class="callout warn">Keys can't be saved yet: the dashboard's owner needs to set SECRETS_KEY.</div>{% endif %}
+  <div class="form-grid">
+    {% for field, (label, hint) in secret_labels.items() %}
+    <div class="full"><label for="{{ field }}">{{ label }} {% if field in keys_set %}<span class="pill ok" style="margin-left:6px">saved</span>{% endif %}</label>
+      <input id="{{ field }}" type="password" name="{{ field }}" autocomplete="off" placeholder="{{ 'Saved: paste a new one to replace it' if field in keys_set else '' }}" {{ 'disabled' if not can_store_keys }}>
+      <p class="small muted" style="margin:-8px 0 6px">{{ hint }}</p>
+      {% if field in keys_set %}<label class="check small" style="margin-bottom:12px"><input type="checkbox" name="remove_{{ field }}"> Remove this key</label>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="form-actions"><button type="submit">Save profile</button></div>
+</section>
+</form>
+
+{% if 'gmail_app_password' in keys_set %}
+<section class="panel card-box" style="max-width: 900px;">
+  <div class="panel-head"><h2>Check your Gmail login</h2></div>
+  <p class="hint">Signs in to Gmail with your saved address and app password, without sending anything.</p>
+  <form method="post"><input type="hidden" name="action" value="test_gmail"><button type="submit" class="ghost sm">Test Gmail login</button></form>
+</section>
+{% endif %}
+{% endblock %}

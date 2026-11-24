@@ -17,6 +17,20 @@ import re
 from config import config
 
 # --- Identity -----------------------------------------------------------
+# Friend mode: when a profile.json sits in the working directory, this run is
+# for an invited user (see tenants.py), and every personal detail below comes
+# from it. In that mode nothing falls back to the owner's data: no built-in
+# roles, no built-in searches, no sector letters. A friend with nothing set up
+# sends nothing, rather than sending the owner's pitch under their name.
+PROFILE_FILE = "profile.json"
+TENANT_MODE = os.path.exists(PROFILE_FILE)
+_profile = {}
+if TENANT_MODE:
+    with open(PROFILE_FILE, encoding="utf-8") as _f:
+        _profile = json.load(_f)
+    if not (_profile.get("full_name") or "").strip():
+        raise ValueError("profile.json: full_name is required.")
+
 FULL_NAME = "Asher Yram Tetteh-Abotsi"
 HEADLINE = "Cloud & DevOps Engineer"
 ROLE_TITLE = "Cloud & DevOps Engineer"
@@ -35,6 +49,27 @@ GITHUB_LABEL = "github.com/Asheryram"
 
 # Prefix for generated cover letter filenames (no spaces).
 FILE_SLUG = "Asher_Yram_Tetteh-Abotsi"
+
+# Where companies are assumed to be when a search doesn't say (letter address).
+DEFAULT_COMPANY_LOCATION = "Accra, Ghana"
+
+
+def _label(url):
+    return re.sub(r"^https?://(www\.)?", "", url or "").rstrip("/")
+
+
+if TENANT_MODE:
+    FULL_NAME = _profile["full_name"].strip()
+    HEADLINE = ROLE_TITLE = (_profile.get("headline") or "").strip()
+    LOCATION = (_profile.get("location") or "").strip()
+    LINKEDIN_URL = (_profile.get("linkedin") or "").strip()
+    LINKEDIN_LABEL = _label(LINKEDIN_URL)
+    # "Portfolio" in the profile: GitHub, Behance, a personal site...
+    GITHUB_URL = (_profile.get("portfolio") or "").strip()
+    GITHUB_LABEL = _label(GITHUB_URL)
+    FILE_SLUG = re.sub(r"[^A-Za-z0-9-]+", "_", FULL_NAME).strip("_") or "Applicant"
+    DEFAULT_COMPANY_LOCATION = LOCATION or ""
+    # Phone and email arrive in the environment from tenants.py, like the owner's.
 
 # Each track attaches its own CV (see "cv_path" in TRACKS below), but the
 # recipient always sees this one filename. Otherwise a company receiving
@@ -103,6 +138,9 @@ def load_tracks(path=None):
     you edited them is worse than a failed run that tells you why.
     """
     if path is None:
+        if TENANT_MODE and not os.path.exists(TRACKS_FILE):
+            # A friend's roles are theirs or nothing: never the owner's.
+            raise ValueError("No roles set up yet (tracks.json). Add one on the dashboard's Roles page.")
         path = TRACKS_FILE if os.path.exists(TRACKS_FILE) else DEFAULT_TRACKS_FILE
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -118,11 +156,11 @@ def load_tracks(path=None):
         missing = [k for k in REQUIRED_TRACK_FIELDS if not t.get(k)]
         if missing:
             raise ValueError(f"{path}: track '{key}' is missing {', '.join(missing)}.")
-        if "keywords" not in t:
+        if "keywords" not in t and not TENANT_MODE:
             # A tracks.json saved before keywords existed: give the built-in
             # roles their default keywords rather than silently none.
             t["keywords"] = list(_default_keywords().get(key, []))
-        kws = t["keywords"]
+        kws = t.setdefault("keywords", [])
         if not isinstance(kws, list) or not all(isinstance(k, str) for k in kws):
             raise ValueError(f"{path}: track '{key}' keywords must be a list of strings.")
         if not isinstance(t["highlights"], list):
@@ -170,6 +208,10 @@ def track_hold_reason(track=None):
         return f"track '{key}' is switched off"
     if not os.path.exists(t["cv_path"]):
         return f"no CV for track '{key}' at '{t['cv_path']}'"
+    if TENANT_MODE and not t.get("letter"):
+        # The letter-less fallback is the owner's sector letters, written about
+        # the owner's own experience: never for anyone else.
+        return f"track '{key}' has no cover letter written"
     return None
 
 
@@ -196,9 +238,9 @@ def signature_block():
         f"Best regards,\n\n"
         f"{FULL_NAME}\n"
         f"{location_line}"
-        f"Phone: {PHONE}\n"
-        f"LinkedIn: {LINKEDIN_URL}\n"
-        f"GitHub: {GITHUB_URL}\n"
+        + (f"Phone: {PHONE}\n" if PHONE else "")
+        + (f"LinkedIn: {LINKEDIN_URL}\n" if LINKEDIN_URL else "")
+        + (f"{'GitHub' if 'github.com' in GITHUB_URL else 'Portfolio'}: {GITHUB_URL}\n" if GITHUB_URL else "")
     )
 
 

@@ -208,9 +208,12 @@ class FakeStateRepo:
 
     def __init__(self, state_repo):
         self.files = {}
-        state_repo._get_file_bytes = self.get
-        state_repo._put_file_bytes = self.put
-        state_repo.cv_size = lambda p: len(self.files[p]) if p in self.files else None
+        # Fake the raw GitHub layer, under the per-user scoping, so tests
+        # exercise the real scoping code (state_repo._scoped).
+        state_repo._raw_get = self.get
+        state_repo._raw_put = self.put
+        state_repo._raw_size = lambda p: len(self.files[p]) if p in self.files else None
+        self.messages = []
         state_repo.latest_run = lambda wf: None
 
     def get(self, path):
@@ -218,6 +221,7 @@ class FakeStateRepo:
 
     def put(self, path, data, sha, message):
         self.files[path] = data
+        self.messages.append(message)
         return "sha"
 
 
