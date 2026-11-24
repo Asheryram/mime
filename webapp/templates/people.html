@@ -13,7 +13,7 @@
     <input type="email" name="email" placeholder="friend@gmail.com" required style="margin:0; max-width: 360px;" aria-label="Email to invite">
     <button type="submit" class="sm">Invite</button>
   </form>
-  <p class="small muted" style="margin-top:10px">Only invited emails can sign up. They're emailed a sign-up link from your Gmail.</p>
+  <p class="small muted" style="margin-top:10px">Only invited emails can sign up. They're emailed a sign-up link from your Gmail. Removing access keeps their data; inviting them again restores their workspace as they left it.</p>
 </section>
 
 <section class="panel card-box">
@@ -27,9 +27,9 @@
         <td class="mono">{{ i.email }}</td>
         <td>{% if i.tenant %}<span class="pill ok">joined {{ i.joined_at|longdate }}</span>{% else %}<span class="pill later">invited {{ i.invited_at|longdate }}</span>{% endif %}</td>
         <td class="mono small">{{ ('tenants/' ~ i.tenant ~ '/') if i.tenant else '' }}</td>
-        <td><form method="post" class="inline" onsubmit="return confirm('Remove {{ i.email }}? They are signed out at once and their pipeline stops. Their data stays in the state repo.');">
+        <td><form method="post" class="inline" onsubmit="return confirm('Remove access for {{ i.email }}? They are signed out at once and their pipeline is paused. Their data is kept: invite them again to restore everything.');">
           <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ i.email }}">
-          <button type="submit" class="danger sm">Remove</button></form></td>
+          <button type="submit" class="danger sm">Remove access</button></form></td>
       </tr>
     {% endfor %}
     </tbody>
