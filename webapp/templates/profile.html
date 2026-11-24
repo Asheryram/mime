@@ -3,6 +3,12 @@
 {% block page_title %}Your profile{% endblock %}
 {% block page_sub %}Who your applications are from. Your emails and cover letters are signed with these details and sent from your own Gmail.{% endblock %}
 {% block content %}
+<style>
+  .key-guide { background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; margin: 0 0 12px; font-size: 13px; }
+  .key-guide summary { cursor: pointer; font-weight: 500; color: var(--fg); }
+  .key-guide ol { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; color: var(--fg-2); }
+  .key-guide a { white-space: nowrap; font-weight: 500; }
+</style>
 {% include "_setup_steps.html" %}
 <form method="post">
 <section class="panel card-box" style="max-width: 900px;">
@@ -25,6 +31,18 @@
     <div class="full"><label for="{{ field }}">{{ label }} {% if field in keys_set %}<span class="pill ok" style="margin-left:6px">saved</span>{% endif %}</label>
       <input id="{{ field }}" type="password" name="{{ field }}" autocomplete="off" placeholder="{{ 'Saved: paste a new one to replace it' if field in keys_set else '' }}" {{ 'disabled' if not can_store_keys }}>
       <p class="small muted" style="margin:-8px 0 6px">{{ hint }}</p>
+      {% set g = key_guides.get(field) %}
+      {% if g %}
+      <details class="key-guide" {{ 'open' if field not in keys_set }}>
+        <summary>How to get your {{ label }} <span class="faint">· {{ g.cost }}</span></summary>
+        <ol>
+          {% for text, href in g.steps %}
+          <li>{{ text }}{% if href %} <a href="{{ href }}" target="_blank" rel="noopener">Open ↗</a>{% endif %}</li>
+          {% endfor %}
+        </ol>
+        {% if g.note %}<p class="small muted" style="margin:6px 0 0">{{ g.note }}{% if g.note_link %} <a href="{{ g.note_link }}" target="_blank" rel="noopener">Open ↗</a>{% endif %}</p>{% endif %}
+      </details>
+      {% endif %}
       {% if field in keys_set %}<label class="check small" style="margin-bottom:12px"><input type="checkbox" name="remove_{{ field }}"> Remove this key</label>{% endif %}
     </div>
     {% endfor %}

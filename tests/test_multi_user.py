@@ -217,6 +217,22 @@ class DashboardIsolationTests(unittest.TestCase):
         self.assertIn(b"Gmail rejected GMAIL_APP_PASSWORD", r.data)
         self.assertIn("keren@gmail.com", self.fdb.invites)
 
+    def test_profile_and_invite_say_where_to_get_each_key(self):
+        self.friend()
+        page = self.c.get("/profile").data.decode()
+        for url in ("https://myaccount.google.com/apppasswords", "https://dashboard.exa.ai/api-keys",
+                    "https://console.apify.com/settings/integrations"):
+            self.assertIn(url, page)
+        self.c.get("/logout")
+        sent = []
+        with mock.patch.object(self.app, "send_email", side_effect=lambda to, subj, body: sent.append(body)):
+            self.login(OWNER, "owner-pw")
+            self.c.post("/people", data={"action": "invite", "email": "keren@gmail.com"})
+        self.assertEqual(len(sent), 1)
+        self.assertIn("signup?email=keren", sent[0])
+        for url in ("myaccount.google.com/apppasswords", "dashboard.exa.ai/api-keys", "console.apify.com/settings/integrations"):
+            self.assertIn(url, sent[0])
+
     def test_people_page_is_owner_only(self):
         self.friend()
         r = self.c.post("/people", data={"action": "invite", "email": "x@gmail.com"})
