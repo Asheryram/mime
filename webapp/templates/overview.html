@@ -4,6 +4,7 @@
 {% block page_title %}Overview{% endblock %}
 {% block page_sub %}What needs you, what goes out next, and how the campaign is doing.{% endblock %}
 {% block content %}
+{% include "_setup_steps.html" %}
 <div class="kpis">
   <a class="kpi card-box {{ 'hot' if nav.attention }}" href="{{ url_for('attention') }}">
     <span class="kpi-label">{% if nav.attention %}<span class="dot"></span>{% endif %}Needs you</span>

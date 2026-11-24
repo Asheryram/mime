@@ -17,6 +17,12 @@ on:
         type: choice
         options: [full, referrals]
         default: full
+      tenant:
+        # Set by an invited user's "Run now" / "Send now" on the dashboard:
+        # runs only that user, never the owner's own pipeline.
+        description: "Only this invited user (blank = owner and everyone)"
+        type: string
+        default: ""
 
 # Shared with scrape-pipeline.yml so the two never run at once (e.g. a "Run now"
 # from the dashboard landing on top of a scheduled run) and fight over the queue.
@@ -83,34 +89,52 @@ jobs:
           done
 
       - name: Mark replies and bounces from the inbox
+        if: ${{ !inputs.tenant }}
         # Before anything is sent: a follow-up must never chase someone who
         # already replied. Read-only, headers only (see inbox_check.py).
         run: python3 outreach_pipeline.py check-inbox
 
       - name: Send queued referrals
+        if: ${{ !inputs.tenant }}
         # Applications a company asked you to send to another address,
         # queued from that company's dashboard page.
         run: python3 outreach_pipeline.py send-referrals
 
       - name: Send approved check-ins
+        if: ${{ !inputs.tenant }}
         # Companies that said "not now": only ones you read and pressed Send on.
         run: python3 outreach_pipeline.py send-checkins
 
       - name: Auto-approve clean leads
-        if: ${{ inputs.mode != 'referrals' }}
+        if: ${{ !inputs.tenant && inputs.mode != 'referrals' }}
         run: python3 outreach_pipeline.py auto-approve
 
       - name: Generate cover letters
-        if: ${{ inputs.mode != 'referrals' }}
+        if: ${{ !inputs.tenant && inputs.mode != 'referrals' }}
         run: python3 outreach_pipeline.py generate
 
       - name: Send approved applications
-        if: ${{ inputs.mode != 'referrals' }}
+        if: ${{ !inputs.tenant && inputs.mode != 'referrals' }}
         run: python3 outreach_pipeline.py send
 
       - name: Send eligible follow-ups
-        if: ${{ inputs.mode != 'referrals' }}
+        if: ${{ !inputs.tenant && inputs.mode != 'referrals' }}
         run: python3 followup_pipeline.py run
+
+      - name: Run the pipeline for invited users
+        # Each user runs isolated: own folder, own credentials, own process
+        # (see tenants.py). Runs even if the owner's steps failed, and one
+        # user's failure never fails this job.
+        if: always()
+        env:
+          SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
+          SENDER_EMAIL: ""
+          GMAIL_APP_PASSWORD: ""
+          APPLICANT_EMAIL: ""
+          APPLICANT_PHONE: ""
+          EXA_API_KEY: ""
+          APIFY_API_TOKEN: ""
+        run: python3 tenants.py ${{ inputs.mode == 'referrals' && 'referrals' || 'send' }} --state state-repo --only "${{ inputs.tenant }}"
 
       - name: Push updated state back to the private repo
         if: always()
@@ -121,6 +145,7 @@ jobs:
           git config user.name "mime-ci"
           git config user.email "actions@users.noreply.github.com"
           git add outreach_queue.csv outreach_log.csv
+          git add tenants 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m "${{ inputs.mode == 'referrals' && 'Referral send' || 'Daily send run' }}: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           # This run can take ~15 minutes (spaced-out sends), and the dashboard

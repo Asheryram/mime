@@ -6,7 +6,14 @@ on:
     # Every 6 hours at :17, off the hour so GitHub doesn't delay it.
     # Keep in step with SCRAPE_* in webapp/app.py.
     - cron: "17 */6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tenant:
+        # Set by an invited user's "Run now" on the dashboard: runs only that
+        # user, never the owner's own pipeline.
+        description: "Only this invited user (blank = owner and everyone)"
+        type: string
+        default: ""
 
 # Shared with send-pipeline.yml so the two never run at once (e.g. a "Run now"
 # from the dashboard landing on top of a scheduled run) and fight over the queue.
@@ -68,17 +75,36 @@ jobs:
           cp state-repo/tracks.json . || true
 
       - name: Mark replies and bounces from the inbox
+        if: ${{ !inputs.tenant }}
         # Every 6 hours, so the dashboard's Replied and reply rate stay current.
         run: python3 outreach_pipeline.py check-inbox
 
       - name: Search for new candidate companies
+        if: ${{ !inputs.tenant }}
         run: python3 outreach_pipeline.py search-all
 
       - name: Scrape contact emails
+        if: ${{ !inputs.tenant }}
         run: python3 outreach_pipeline.py scrape
 
       - name: Email a summary of rows that need a human
+        if: ${{ !inputs.tenant }}
         run: python3 outreach_pipeline.py notify-review
+
+      - name: Run the pipeline for invited users
+        # Each user runs isolated: own folder, own credentials, own process
+        # (see tenants.py). Runs even if the owner's steps failed, and one
+        # user's failure never fails this job.
+        if: always()
+        env:
+          SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
+          SENDER_EMAIL: ""
+          GMAIL_APP_PASSWORD: ""
+          APPLICANT_EMAIL: ""
+          APPLICANT_PHONE: ""
+          EXA_API_KEY: ""
+          APIFY_API_TOKEN: ""
+        run: python3 tenants.py scrape --state state-repo --only "${{ inputs.tenant }}"
 
       - name: Push updated state back to the private repo
         if: always()
@@ -89,6 +115,7 @@ jobs:
           git config user.name "mime-ci"
           git config user.email "actions@users.noreply.github.com"
           git add outreach_queue.csv outreach_log.csv
+          git add tenants 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m "Scrape run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           # The dashboard may have edited the queue while this ran. Rebase onto

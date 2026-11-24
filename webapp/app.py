@@ -63,6 +63,20 @@ with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "search_queri
           encoding="utf-8") as _f:
     DEFAULT_QUERIES_TEXT = _f.read()
 
+# What an invited user sees before saving searches of their own: instructions
+# only. The owner's searches (and roles) are never a member's starting point.
+MEMBER_QUERIES_TEMPLATE = """# One search per line: "search | how many results (1-25) | role".
+# Describe the companies you want: industry, location, what they do. The role
+# (a short name from your Roles page) is the starting guess for what they find.
+# Example:
+#   fintech startups in Lagos with in-house engineering teams | 10 | frontend
+# Lines starting with # are ignored. Nothing is searched until you add a line.
+"""
+
+
+def default_queries_text():
+    return MEMBER_QUERIES_TEMPLATE if state_repo.current_tenant() else DEFAULT_QUERIES_TEXT
+
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -70,6 +84,49 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 def serializer():
     return URLSafeTimedSerializer(app.secret_key, salt="password-reset")
+
+
+def is_owner():
+    """The owner: their own login, their data at the state repo root. Sessions
+    from before invited users existed carry no role and are the owner's."""
+    return bool(session.get("authed")) and session.get("role", "owner") == "owner"
+
+
+@app.before_request
+def bind_user():
+    """
+    Point every storage call in this request at the signed-in user's data.
+    Reset first, on every request, so nothing carries over between requests on
+    the same worker. A member removed by the owner is signed out here, on
+    their very next request.
+    """
+    state_repo.set_tenant("")
+    g.member = None
+    if not session.get("authed") or session.get("role", "owner") == "owner":
+        return None
+    member = db.get_member(session.get("email", ""))
+    if not member or member["tenant"] != session.get("tenant"):
+        session.clear()
+        flash("Your access to this dashboard has ended.", "error")
+        return redirect(url_for("login"))
+    state_repo.set_tenant(member["tenant"])
+    g.member = member
+    return None
+
+
+@app.teardown_request
+def unbind_user(exc=None):
+    state_repo.set_tenant("")
+
+
+def owner_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not is_owner():
+            flash("Only the dashboard's owner can open that page.", "error")
+            return redirect(url_for("overview"))
+        return view(*args, **kwargs)
+    return wrapped
 
 
 def login_required(view):
@@ -133,10 +190,16 @@ def login():
         email = request.form.get("email", "").strip().lower()
         pw = request.form.get("password", "")
         if email == ALLOWED_EMAIL and check_password_hash(auth["password_hash"], pw):
-            session["authed"] = True
+            session.clear()
+            session.update({"authed": True, "role": "owner", "email": email, "tenant": ""})
+            return safe_next("overview")
+        member = db.get_member(email) if email != ALLOWED_EMAIL else None
+        if member and check_password_hash(member["password_hash"], pw):
+            session.clear()
+            session.update({"authed": True, "role": "member", "email": email, "tenant": member["tenant"]})
             return safe_next("overview")
         flash("Incorrect email or password.", "error")
-    return render_template("login.html", email=ALLOWED_EMAIL)
+    return render_template("login.html", email="")
 
 
 @app.route("/logout")
@@ -155,13 +218,13 @@ def forgot():
                   "dashboard's environment variables, then try again.", "error")
             return redirect(url_for("forgot"))
         email = request.form.get("email", "").strip().lower()
-        auth = db.load_auth()
-        if email == ALLOWED_EMAIL and auth.get("password_hash"):
-            token = serializer().dumps({"h": auth["password_hash"][:16]})
+        current = current_hash_for(email)
+        if current:
+            token = serializer().dumps({"e": email, "h": current[:16]})
             link = request.url_root.rstrip("/") + url_for("reset_password", token=token)
             try:
                 send_email(
-                    ALLOWED_EMAIL,
+                    email,
                     "Reset your Outbound password",
                     f"Reset your password here (expires in 1 hour):\n\n{link}\n\n"
                     f"If you didn't request this, ignore this email.",
@@ -187,7 +250,9 @@ def reset_password(token):
         flash("That reset link is invalid or has expired.", "error")
         return redirect(url_for("forgot"))
 
-    if not auth.get("password_hash") or payload.get("h") != auth["password_hash"][:16]:
+    email = payload.get("e") or ALLOWED_EMAIL  # links from before invited users existed
+    current = current_hash_for(email)
+    if not current or payload.get("h") != current[:16]:
         flash("That reset link has already been used.", "error")
         return redirect(url_for("forgot"))
 
@@ -199,10 +264,60 @@ def reset_password(token):
         elif pw != pw2:
             flash("Passwords don't match.", "error")
         else:
-            db.save_auth(generate_password_hash(pw), datetime.now(timezone.utc))
+            if email == ALLOWED_EMAIL:
+                db.save_auth(generate_password_hash(pw), datetime.now(timezone.utc))
+            else:
+                db.set_member_password(email, generate_password_hash(pw), datetime.now(timezone.utc).isoformat())
             flash("Password updated. Log in below.", "success")
             return redirect(url_for("login"))
     return render_template("reset.html")
+
+
+def current_hash_for(email):
+    """The password hash for the owner or a member, or None for anyone else."""
+    if email == ALLOWED_EMAIL:
+        return db.load_auth().get("password_hash")
+    member = db.get_member(email)
+    return member["password_hash"] if member else None
+
+
+# --- Sign-up (invited users only) ---------------------------------------------
+
+def tenant_id_for(email):
+    """A folder name for a new member: readable, unique, path-safe."""
+    import hashlib
+    local = re.sub(r"[^a-z0-9]+", "-", email.split("@")[0].lower()).strip("-")[:24] or "user"
+    return f"{local}-{hashlib.sha1(email.encode()).hexdigest()[:6]}"
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if session.get("authed"):
+        return redirect(url_for("overview"))
+    form = request.form if request.method == "POST" else {"email": request.args.get("email", "")}
+    if request.method == "POST":
+        email = form.get("email", "").strip().lower()
+        pw, pw2 = form.get("password", ""), form.get("password2", "")
+        if email == ALLOWED_EMAIL:
+            return redirect(url_for("login"))
+        if not EMAIL_RE.match(email) or not db.is_invited(email):
+            flash("That email hasn't been invited. Ask whoever runs this dashboard to add you.", "error")
+        elif db.get_member(email):
+            flash("You already have an account. Log in below.", "success")
+            return redirect(url_for("login"))
+        elif len(pw) < 10:
+            flash("Password must be at least 10 characters.", "error")
+        elif pw != pw2:
+            flash("Passwords don't match.", "error")
+        else:
+            tenant = tenant_id_for(email)
+            db.create_member(email, tenant, generate_password_hash(pw), datetime.now(timezone.utc).isoformat())
+            session.clear()
+            session.update({"authed": True, "role": "member", "email": email, "tenant": tenant})
+            flash("Welcome! Start by filling in your profile: it's what your applications are signed with.",
+                  "success")
+            return redirect(url_for("profile"))
+    return render_template("signup.html", form=form)
 
 
 # --- Queue helpers ------------------------------------------------------------
@@ -291,6 +406,8 @@ def load_data():
 def shell_context():
     now = utcnow()
     return {
+        "is_member": bool(getattr(g, "member", None)),
+        "is_owner_user": is_owner(),
         "palette": getattr(g, "palette", []),
         "shell_next_send": next_send_run(now),
         "shell_next_scrape": next_scrape_run(now),
@@ -534,7 +651,7 @@ def overview():
     ]
     series = sent_series(safe_call(state_repo.load_log, fallback=[]) or [])
     return render_template(
-        "overview.html", active="overview", nav=nav,
+        "overview.html", active="overview", nav=nav, steps=setup_steps(),
         upcoming_count=len(upcoming),
         batch=min(len(upcoming), DAILY_SEND_LIMIT),
         rollover=max(0, len(upcoming) - DAILY_SEND_LIMIT),
@@ -1227,9 +1344,9 @@ def settings():
     queries_text = state_repo.get_queries_text()
     return render_template(
         "settings.html", active="settings", nav=nav, tracks=track_keys(),
-        queries_text=queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT,
+        queries_text=queries_text if queries_text is not None else default_queries_text(),
         searches_per_run=SEARCHES_PER_RUN,
-        queries_count=sum(1 for l in (queries_text if queries_text is not None else DEFAULT_QUERIES_TEXT).splitlines()
+        queries_count=sum(1 for l in (queries_text if queries_text is not None else default_queries_text()).splitlines()
                           if l.strip() and not l.strip().startswith("#")),
         queries_saved=queries_text is not None,
         scrape_run=safe_call(state_repo.latest_run, SCRAPE_WORKFLOW),
@@ -1528,6 +1645,8 @@ PITCH_FIELDS = [f for f, _, _ in ROLE_TEXT_FIELDS] + ["highlights", "letter"]
 
 
 def builtin_pitch_differs(key, role):
+    if state_repo.current_tenant():
+        return False  # the built-in pitches are the owner's: never offered to anyone else
     d = state_repo.DEFAULT_TRACKS.get(key)
     return bool(d) and any(role.get(f) != d.get(f) for f in PITCH_FIELDS)
 
@@ -1535,7 +1654,7 @@ def builtin_pitch_differs(key, role):
 @app.route("/roles/<key>/reset", methods=["POST"])
 @login_required
 def role_reset(key):
-    if key not in state_repo.DEFAULT_TRACKS:
+    if state_repo.current_tenant() or key not in state_repo.DEFAULT_TRACKS:
         flash("Only built-in roles have a pitch to reset to.", "error")
         return redirect(url_for("role_detail", key=key))
 
@@ -1677,6 +1796,181 @@ def role_cv_view(key):
         data, mimetype="application/pdf",
         headers={"Content-Disposition": f"inline; filename=cv_{key}.pdf"},
     )
+
+# --- Invited users: profile and keys -----------------------------------------------
+# A member's applications go out under their own name, from their own Gmail,
+# with their own Exa/Apify keys: all set here. Keys are write-only: the page
+# shows whether each is saved, never its value.
+
+PROFILE_FIELDS = [
+    # (field, label, required, hint)
+    ("full_name", "Full name", True, "As it should appear on your emails and cover letters."),
+    ("headline", "Headline", False, "Under your name on the cover letter, e.g. Frontend Engineer. Each role can override it."),
+    ("email", "Gmail address you send from", True, "Applications are sent from here, and replies are read from its inbox."),
+    ("phone", "Phone", False, "With country code, e.g. +233 20 000 0000."),
+    ("location", "Your location", False, "e.g. Accra, Ghana. Shown in your signature; also the default for companies found."),
+    ("linkedin", "LinkedIn URL", False, ""),
+    ("portfolio", "GitHub, Behance or portfolio URL", False, ""),
+]
+SECRET_LABELS = {
+    "gmail_app_password": ("Gmail app password", "16 letters from myaccount.google.com/apppasswords (needs 2-Step Verification)."),
+    "exa_api_key": ("Exa API key", "From dashboard.exa.ai: finds companies for your searches."),
+    "apify_api_token": ("Apify API token", "From console.apify.com, Settings → API: finds their email addresses."),
+}
+URL_RE = re.compile(r"^https?://[^\s\"'<>]+$", re.I)
+
+
+def setup_steps():
+    """What an invited user still has to do before anything can go out, in order."""
+    if not state_repo.current_tenant():
+        return []
+    profile = state_repo.get_profile()
+    keys = set(profile.get("keys_set", []))
+    tracks, _ = current_tracks()
+    ready_role = any(t.get("active", True) and t.get("letter") and
+                     safe_call(state_repo.cv_size, t["cv_path"]) is not None for t in tracks.values())
+    queries = state_repo.get_queries_text()
+    has_search = bool(queries and any(l.strip() and not l.strip().startswith("#") for l in queries.splitlines()))
+    return [
+        ("Fill in your profile", bool(profile.get("full_name") and profile.get("email")), url_for("profile")),
+        ("Save your Gmail app password", "gmail_app_password" in keys, url_for("profile") + "#keys"),
+        ("Add a role with its cover letter and CV, then turn it on", ready_role, url_for("roles")),
+        ("Write your searches", has_search, url_for("settings") + "#queries"),
+        ("Save your Exa and Apify keys", {"exa_api_key", "apify_api_token"} <= keys, url_for("profile") + "#keys"),
+    ]
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if not state_repo.current_tenant():
+        flash("Your own details are set in applicant.py and the repo's secrets.", "success")
+        return redirect(url_for("settings"))
+    _, nav = load_data()
+    current = state_repo.get_profile()
+    import secretbox
+    can_store_keys = secretbox.available()
+
+    if request.method == "POST" and request.form.get("action") == "test_gmail":
+        try:
+            secrets = state_repo.get_secrets()
+        except secretbox.SecretsUnavailable:
+            secrets = {}
+        if not current.get("email") or not secrets.get("gmail_app_password"):
+            flash("Save your Gmail address and app password first.", "error")
+        else:
+            try:
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ssl.create_default_context(), timeout=20) as smtp:
+                    smtp.ehlo()
+                    smtp.user, smtp.password = current["email"], secrets["gmail_app_password"]
+                    smtp.auth("PLAIN", smtp.auth_plain)
+                flash("Gmail accepted your app password. You're set to send.", "success")
+            except smtplib.SMTPAuthenticationError:
+                flash("Gmail rejected that address and app password. Make a new app password and save it again.",
+                      "error")
+            except (smtplib.SMTPException, OSError):
+                flash("Couldn't reach Gmail just now. Try again in a minute.", "error")
+        return redirect(url_for("profile") + "#keys")
+
+    if request.method == "POST":
+        f = request.form
+        new = dict(current)
+        errors = []
+        for field, label, required, _ in PROFILE_FIELDS:
+            value = (f.get(field) or "").strip()[:200]
+            if required and not value:
+                errors.append(f"{label} is required.")
+            if field == "email" and value and not EMAIL_RE.match(value):
+                errors.append("Enter a valid email address.")
+            if field in ("linkedin", "portfolio") and value and not URL_RE.match(value):
+                errors.append(f"{label} must start with https://")
+            new[field] = value
+        changes = {}
+        for field in SECRET_LABELS:
+            value = (f.get(field) or "").strip()
+            if f.get(f"remove_{field}"):
+                changes[field] = None
+            elif value:
+                if field == "gmail_app_password":
+                    value = value.replace(" ", "")
+                    if not re.fullmatch(r"[A-Za-z]{16}", value):
+                        errors.append("A Gmail app password is 16 letters (spaces are fine).")
+                        continue
+                elif len(value) > 300 or re.search(r"\s", value):
+                    errors.append(f"That {SECRET_LABELS[field][0]} doesn't look right.")
+                    continue
+                changes[field] = value
+        if changes and not can_store_keys:
+            errors.append("Keys can't be saved yet: the dashboard's owner needs to set SECRETS_KEY.")
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("profile.html", active="profile", nav=nav, p={**current, **dict(f)},
+                                   fields=PROFILE_FIELDS, secret_labels=SECRET_LABELS,
+                                   keys_set=set(current.get("keys_set", [])), can_store_keys=can_store_keys,
+                                   steps=setup_steps())
+        if changes:
+            new["keys_set"] = state_repo.update_secrets(changes, "Update keys via dashboard")
+        state_repo.save_profile(new, "Update profile via dashboard")
+        flash("Profile saved." + (" Keys updated." if changes else ""), "success")
+        return redirect(url_for("profile"))
+
+    if not current.get("email") and g.member:
+        current = {**current, "email": g.member["email"]}
+    return render_template("profile.html", active="profile", nav=nav, p=current, fields=PROFILE_FIELDS,
+                           secret_labels=SECRET_LABELS, keys_set=set(current.get("keys_set", [])),
+                           can_store_keys=can_store_keys, steps=setup_steps())
+
+
+# --- People (owner only) ---------------------------------------------------------------
+
+@app.route("/people", methods=["GET", "POST"])
+@login_required
+@owner_required
+def people():
+    _, nav = load_data()
+    import secretbox
+    if request.method == "POST":
+        action = request.form.get("action")
+        email = (request.form.get("email") or "").strip().lower()
+        if action == "invite":
+            if not EMAIL_RE.match(email):
+                flash("Enter a valid email address.", "error")
+            elif email == ALLOWED_EMAIL:
+                flash("That's you.", "error")
+            else:
+                db.add_invite(email, datetime.now(timezone.utc).isoformat())
+                link = url_for("signup", email=email, _external=True)
+                try:
+                    send_email(email, "You're invited to Outbound",
+                               f"You've been invited to use Outbound, a job-application pipeline that finds "
+                               f"companies, writes tailored emails and cover letters, and follows up for you.\n\n"
+                               f"Create your account here:\n{link}\n\n"
+                               f"You'll add your own CV, Gmail app password and API keys after signing up.")
+                    flash(f"Invited {email}. They've been emailed a sign-up link.", "success")
+                except (KeyError, smtplib.SMTPException, OSError):
+                    flash(f"Invited {email}, but the invite email couldn't be sent. Send them this link: {link}",
+                          "success")
+        elif action == "remove":
+            tenant = db.remove_access(email)
+            if tenant:
+                # Stop their pipeline runs too, not just their logins.
+                state_repo.set_tenant(tenant)
+                try:
+                    prof = state_repo.get_profile()
+                    if prof:
+                        prof["paused"] = True
+                        state_repo.save_profile(prof, "Access removed by owner; pipeline paused")
+                finally:
+                    state_repo.set_tenant("")
+                flash(f"Removed {email}. Their pipeline is paused and they're signed out. Their data stays in "
+                      f"tenants/{tenant}/ in the state repo until you delete it.", "success")
+            else:
+                flash(f"Removed the invite for {email}.", "success")
+        return redirect(url_for("people"))
+    return render_template("people.html", active="people", nav=nav, invites=safe_call(db.list_invites, fallback=[]),
+                           keys_ready=secretbox.available())
+
 
 if __name__ == "__main__":
     app.run(debug=True)

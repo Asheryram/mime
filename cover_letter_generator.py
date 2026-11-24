@@ -169,14 +169,17 @@ class CoverLetterGenerator:
         # Letterhead
         story.append(Paragraph(escape(applicant.FULL_NAME).upper(), styles["name"]))
         story.append(Paragraph(escape(applicant.headline_for(track)), styles["sub"]))
-        contact_parts = [
-            escape(applicant.PHONE),
-            escape(applicant.EMAIL),
-            f'<a href="{applicant.LINKEDIN_URL}" color="{self.primary_color.hexval()}">'
-            f"{escape(applicant.LINKEDIN_LABEL)}</a>",
-            f'<a href="{applicant.GITHUB_URL}" color="{self.primary_color.hexval()}">'
-            f"{escape(applicant.GITHUB_LABEL)}</a>",
-        ]
+        # Any of these may be blank for an invited user; links come from their
+        # profile, so escape them as attribute values too.
+        def link(url, label):
+            return (f'<a href="{escape(url, {chr(34): "&quot;"})}" color="{self.primary_color.hexval()}">'
+                    f"{escape(label)}</a>")
+        contact_parts = [escape(applicant.PHONE), escape(applicant.EMAIL)]
+        contact_parts = [p for p in contact_parts if p]
+        if applicant.LINKEDIN_URL:
+            contact_parts.append(link(applicant.LINKEDIN_URL, applicant.LINKEDIN_LABEL))
+        if applicant.GITHUB_URL:
+            contact_parts.append(link(applicant.GITHUB_URL, applicant.GITHUB_LABEL))
         if applicant.LOCATION:
             contact_parts.append(escape(applicant.LOCATION))
         story.append(Paragraph("&#160;&#160;|&#160;&#160;".join(contact_parts), styles["contact"]))

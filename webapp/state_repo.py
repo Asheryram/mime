@@ -62,12 +62,48 @@ def _headers():
     }
 
 
+# --- Whose data ---------------------------------------------------------------
+# The owner's files live at the repo root, as they always have. An invited
+# user's live under tenants/<id>/. Every read and write goes through _scoped(),
+# set per request from the signed-in session (app.py), so a page can't reach
+# another user's files by building a path: there is no unscoped entry point.
+import contextvars
+
+_TENANT = contextvars.ContextVar("tenant", default="")
+TENANT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
+
+
+def set_tenant(tenant_id):
+    tenant_id = tenant_id or ""
+    if tenant_id and not TENANT_ID_RE.match(tenant_id):
+        raise ValueError("bad tenant id")
+    _TENANT.set(tenant_id)
+
+
+def current_tenant():
+    return _TENANT.get()
+
+
+def _scoped(path):
+    t = _TENANT.get()
+    return f"tenants/{t}/{path}" if t else path
+
+
 def _contents_url(path):
     return f"{API}/repos/{REPO}/contents/{path}"
 
 
 def _get_file_bytes(path):
     """Returns (raw_bytes, sha), or (None, None) if the file doesn't exist yet."""
+    return _raw_get(_scoped(path))
+
+
+def _put_file_bytes(path, raw_bytes, sha, message):
+    t = _TENANT.get()
+    return _raw_put(_scoped(path), raw_bytes, sha, f"[{t}] {message}" if t else message)
+
+
+def _raw_get(path):
     r = requests.get(_contents_url(path), headers=_headers(), params={"ref": BRANCH}, timeout=15)
     if r.status_code == 404:
         return None, None
@@ -76,7 +112,7 @@ def _get_file_bytes(path):
     return base64.b64decode(data["content"]), data["sha"]
 
 
-def _put_file_bytes(path, raw_bytes, sha, message):
+def _raw_put(path, raw_bytes, sha, message):
     payload = {
         "message": message,
         "content": base64.b64encode(raw_bytes).decode("ascii"),
@@ -216,15 +252,21 @@ def _backfill(tracks):
     """A tracks.json saved before keywords existed gets the defaults for built-in roles."""
     for key, t in tracks.items():
         if "keywords" not in t:
-            t["keywords"] = list(DEFAULT_TRACKS.get(key, {}).get("keywords", []))
+            t["keywords"] = [] if _TENANT.get() else list(DEFAULT_TRACKS.get(key, {}).get("keywords", []))
     return tracks
+
+
+def _starting_tracks():
+    """What a missing tracks.json means: the owner's built-in roles for the
+    owner; nothing at all for an invited user (never the owner's pitch)."""
+    return {} if _TENANT.get() else copy.deepcopy(DEFAULT_TRACKS)
 
 
 def get_tracks():
     """Returns (tracks_dict, saved). saved is False while the defaults are in use."""
     raw, _ = _get_file_bytes(TRACKS_PATH)
     if raw is None:
-        return copy.deepcopy(DEFAULT_TRACKS), False
+        return _starting_tracks(), False
     return _backfill(json.loads(raw.decode("utf-8"))), True
 
 
@@ -235,7 +277,7 @@ def mutate_tracks(fn, message, attempts=3):
     """
     for attempt in range(attempts):
         raw, sha = _get_file_bytes(TRACKS_PATH)
-        tracks = _backfill(json.loads(raw.decode("utf-8"))) if raw is not None else copy.deepcopy(DEFAULT_TRACKS)
+        tracks = _backfill(json.loads(raw.decode("utf-8"))) if raw is not None else _starting_tracks()
         result = fn(tracks)
         body = (json.dumps(tracks, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         try:
@@ -253,7 +295,11 @@ def get_cv(cv_path):
 
 def cv_size(cv_path):
     """Size in bytes of a track's CV, or None if it isn't there. Metadata only, no download."""
-    r = requests.get(_contents_url(cv_path), headers=_headers(), params={"ref": BRANCH}, timeout=15)
+    return _raw_size(_scoped(cv_path))
+
+
+def _raw_size(path):
+    r = requests.get(_contents_url(path), headers=_headers(), params={"ref": BRANCH}, timeout=15)
     if r.status_code == 404:
         return None
     r.raise_for_status()
@@ -269,15 +315,19 @@ def save_cv(cv_path, pdf_bytes, message):
 
 def recent_commits(limit=20):
     """Every change to the companion repo, newest first: pipeline runs and dashboard edits alike."""
-    r = requests.get(
-        f"{API}/repos/{REPO}/commits", headers=_headers(),
-        params={"sha": BRANCH, "per_page": limit}, timeout=15,
-    )
+    t = _TENANT.get()
+    params = {"sha": BRANCH, "per_page": limit}
+    if t:
+        params["path"] = f"tenants/{t}"  # only commits that touched their folder
+    r = requests.get(f"{API}/repos/{REPO}/commits", headers=_headers(), params=params, timeout=15)
     r.raise_for_status()
     out = []
     for c in r.json():
+        msg = c["commit"]["message"].split("\n")[0]
+        if not t and re.match(r"^\[[a-z0-9-]+\] ", msg):
+            continue  # an invited user's own edit: theirs, not the owner's feed
         out.append({
-            "message": c["commit"]["message"].split("\n")[0],
+            "message": re.sub(r"^\[[a-z0-9-]+\] ", "", msg),
             "date": c["commit"]["committer"]["date"],
             "author": c["commit"]["author"]["name"],
         })
@@ -308,6 +358,10 @@ def latest_run(workflow_file):
 
 def dispatch_workflow(workflow_file, inputs=None):
     body = {"ref": BRANCH}
+    inputs = dict(inputs or {})
+    if _TENANT.get():
+        # An invited user's "Run now" runs only them, never the owner's pipeline.
+        inputs["tenant"] = _TENANT.get()
     if inputs:
         body["inputs"] = inputs
     r = requests.post(
@@ -321,3 +375,47 @@ def dispatch_workflow(workflow_file, inputs=None):
 
 def actions_url(workflow_file):
     return f"https://github.com/{PIPELINE_REPO}/actions/workflows/{workflow_file}"
+
+
+# --- Invited users' profile and keys ------------------------------------------------
+# profile.json: who the applications are from (name, Gmail, links...). Plain.
+# secrets.enc: their Gmail app password and Exa/Apify keys, encrypted with
+# SECRETS_KEY (secretbox.py). profile.json records only WHICH keys are saved
+# ("keys_set"), so pages can show "saved" without ever decrypting.
+PROFILE_PATH = "profile.json"
+SECRETS_PATH = "secrets.enc"
+
+
+def get_profile():
+    raw, _ = _get_file_bytes(PROFILE_PATH)
+    return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def save_profile(profile, message):
+    _, sha = _get_file_bytes(PROFILE_PATH)
+    _put_file_bytes(PROFILE_PATH, (json.dumps(profile, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+                    sha, message)
+
+
+def update_secrets(changes, message):
+    """
+    changes: {field: new value, or None to remove}. Decrypts what's stored,
+    applies the changes, re-encrypts. Returns the sorted list of fields now set.
+    """
+    import secretbox
+    raw, sha = _get_file_bytes(SECRETS_PATH)
+    current = secretbox.decrypt(raw) if raw else {}
+    for k, v in changes.items():
+        if v is None:
+            current.pop(k, None)
+        else:
+            current[k] = v
+    _put_file_bytes(SECRETS_PATH, secretbox.encrypt(current), sha, message)
+    return sorted(k for k, v in current.items() if v)
+
+
+def get_secrets():
+    """Decrypted keys, for the one place that needs them (testing the Gmail login)."""
+    import secretbox
+    raw, _ = _get_file_bytes(SECRETS_PATH)
+    return secretbox.decrypt(raw) if raw else {}

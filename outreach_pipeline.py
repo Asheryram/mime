@@ -106,7 +106,7 @@ def save_queue(queue):
         for row in queue:
             writer.writerow(row)
 
-def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address="Accra, Ghana", status="Pending", track=None, role_reason="", role_review=""):
+def add_to_queue(company_name, website, email="", company_type="general_startup", recipient="The Recruiting and Technology Team", address=None, status="Pending", track=None, role_reason="", role_review=""):
     queue = load_queue()
     # Deduplicate by company name or website
     for row in queue:
@@ -121,7 +121,7 @@ def add_to_queue(company_name, website, email="", company_type="general_startup"
         "email": email,
         "company_type": company_type,
         "recipient_name": recipient,
-        "company_address": address,
+        "company_address": address if address is not None else applicant.DEFAULT_COMPANY_LOCATION,
         "status": status,
         "date_added": datetime.now().strftime("%Y-%m-%d"),
         "date_sent": "",
@@ -187,7 +187,7 @@ def import_from_markdown(md_path):
                     email="",
                     company_type=current_type,
                     recipient="The Recruiting and Technology Team",
-                    address="Accra, Ghana"
+                    address=applicant.DEFAULT_COMPANY_LOCATION
                 )
 
 # Aggregators and job boards. A search for "companies hiring cloud engineers"
@@ -374,9 +374,12 @@ def clean_company_name(title):
 
 
 def load_search_queries(path=SEARCH_QUERIES_FILE):
-    """Your saved searches, else the shipped defaults."""
+    """Your saved searches, else the shipped defaults (the owner's only: an
+    invited user with no searches of their own searches for nothing)."""
     queries = _parse_search_queries(path) if os.path.exists(path) else []
-    return queries or _parse_search_queries(DEFAULT_SEARCH_QUERIES_FILE)
+    if queries or applicant.TENANT_MODE:
+        return queries
+    return _parse_search_queries(DEFAULT_SEARCH_QUERIES_FILE)
 
 
 def queries_for_this_run(queries, now=None, per_run=QUERIES_PER_RUN):
@@ -503,7 +506,7 @@ def run_exa_search(query_str, limit=15, track=None):
             email="",
             company_type=ctype,
             recipient="The Recruiting and Technology Team",
-            address="Accra, Ghana",
+            address=applicant.DEFAULT_COMPANY_LOCATION,
             status="Review" if review else "Pending",
             track=role,
             role_reason=role_reason,

@@ -1,0 +1,39 @@
+{% extends "base_app.html" %}
+{% block title %}People · Outbound{% endblock %}
+{% block page_title %}People{% endblock %}
+{% block page_sub %}Invite friends to use this dashboard. Each gets their own private workspace: their own roles, CVs, searches, queue, Gmail and API keys. They can't see yours or each other's.{% endblock %}
+{% block content %}
+{% if not keys_ready %}
+<div class="callout warn"><b>One setup step first:</b> set <span class="mono">SECRETS_KEY</span> in the dashboard's Vercel environment and as a GitHub Actions secret on the pipeline repo (the same value in both). Until then, invited users can sign up but can't save their Gmail or API keys, so nothing runs for them.</div>
+{% endif %}
+<section class="panel card-box" style="max-width: 760px;">
+  <div class="panel-head"><h2>Invite someone</h2></div>
+  <form method="post" class="row-actions">
+    <input type="hidden" name="action" value="invite">
+    <input type="email" name="email" placeholder="friend@gmail.com" required style="margin:0; max-width: 360px;" aria-label="Email to invite">
+    <button type="submit" class="sm">Invite</button>
+  </form>
+  <p class="small muted" style="margin-top:10px">Only invited emails can sign up. They're emailed a sign-up link from your Gmail.</p>
+</section>
+
+<section class="panel card-box">
+  <div class="panel-head"><h2>Invited</h2><span class="count-badge">{{ invites|length }}</span></div>
+  {% if invites %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Email</th><th>Status</th><th>Workspace</th><th></th></tr></thead>
+    <tbody>
+    {% for i in invites %}
+      <tr>
+        <td class="mono">{{ i.email }}</td>
+        <td>{% if i.tenant %}<span class="pill ok">joined {{ i.joined_at|longdate }}</span>{% else %}<span class="pill later">invited {{ i.invited_at|longdate }}</span>{% endif %}</td>
+        <td class="mono small">{{ ('tenants/' ~ i.tenant ~ '/') if i.tenant else '' }}</td>
+        <td><form method="post" class="inline" onsubmit="return confirm('Remove {{ i.email }}? They are signed out at once and their pipeline stops. Their data stays in the state repo.');">
+          <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ i.email }}">
+          <button type="submit" class="danger sm">Remove</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No one invited yet.</p>{% endif %}
+</section>
+{% endblock %}

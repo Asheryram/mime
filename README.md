@@ -56,6 +56,16 @@ Each scrape runs **2 of your searches in turn**, not all of them, so every run l
 
 An address is used only if it's on the company's own domain (`hr@hubtel.com` for `hubtel.com.gh` counts) or a free mailbox like Gmail, which small firms often use. Anything else (an applicant-tracking vendor's `contact@manatal.com`, an agency) is not sent to: the company waits in **Needs you** with a note saying what was found. Job aggregators (Expertini, Jooble...) and applicant-tracking systems (Workable, Lever, Manatal...) are skipped as leads.
 
+### Inviting friends (multi-user)
+
+The owner can invite friends from **People** (owner only). Each invited email can sign up and gets a private workspace: their own profile, roles, CVs, cover letters, searches, queue and history. They send from **their own Gmail** with **their own Exa and Apify keys**, and can't see the owner's data or each other's.
+
+- **Setup (once):** generate a key with `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and set it as `SECRETS_KEY` in **both** the dashboard's Vercel environment and the pipeline repo's GitHub Actions secrets. Friends' Gmail app passwords and API keys are stored only encrypted with it (`webapp/secretbox.py`), and the dashboard never shows a saved key back.
+- **Where their data lives:** `tenants/<id>/` in the state repo. The owner's files stay at the root, exactly as before.
+- **How they run:** after the owner's steps, each workflow runs `tenants.py`, which runs every user as a separate process in a fresh folder holding only copies of their own files, with an allowlisted environment: the owner's Gmail, Exa, Apify and GitHub credentials are never passed on, so a missing key skips that step rather than borrowing the owner's. A user's "Run now" / "Send now" runs only them.
+- **No owner defaults leak:** a friend starts with no roles, no searches and no sector letters. Their pipeline refuses to fall back to the owner's (`applicant.TENANT_MODE`), and a role without its own cover letter is held.
+- **Removing someone** (People → Remove) signs them out on their next request and pauses their pipeline; their folder stays until you delete it.
+
 ### Replies and bounces are detected automatically
 
 Before each send and every scrape, `check-inbox` reads the sending Gmail (`SENDER_EMAIL` + `GMAIL_APP_PASSWORD`; IMAP is always on for personal Gmail) and marks companies **replied** or **bounced**, so follow-ups never chase someone who answered and the reply rate is real. It is read-only and headers-only: the mailbox is opened with EXAMINE and fetched with `BODY.PEEK`, so nothing is marked read or moved; only Gmail's own delivery-failure notices are read in full.

@@ -18,7 +18,8 @@
 <section class="panel card-box">
   <div class="panel-head"><h2>Your roles</h2><span class="count-badge">{{ rows|length }}</span>
     <a href="{{ url_for('role_new') }}" class="btn sm" style="margin-left:auto">Add a role</a></div>
-  {% if not saved %}<p class="hint">These are the built-in roles. Saving any change copies them into <span class="mono">tracks.json</span> in your state repo, where both this dashboard and the pipeline read them from.</p>{% endif %}
+  {% if not saved and is_member %}<p class="hint">Add your first role: one for each kind of job you're applying for, each with its own CV and cover letter.</p>
+  {% elif not saved %}<p class="hint">These are the built-in roles. Saving any change copies them into <span class="mono">tracks.json</span> in your state repo, where both this dashboard and the pipeline read them from.</p>{% endif %}
   <div class="table-wrap">
     <table class="data">
       <thead><tr><th>Role</th><th>Applies as</th><th>CV</th><th>Status</th><th>Queued</th><th>Sent</th></tr></thead>
