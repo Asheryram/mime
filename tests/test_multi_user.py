@@ -75,6 +75,8 @@ class DashboardIsolationTests(unittest.TestCase):
         self.app.send_email = lambda *a, **k: None
         self.dispatched = []
         state_repo.dispatch_workflow = self.record_dispatch
+        state_repo.pipeline_busy = lambda wfs: self.busy
+        self.busy = False
         # The owner's data, at the repo root.
         self.fake.files["outreach_queue.csv"] = queue_bytes(state_repo, [
             {"company_name": "Owner Secret Co", "website": "https://ownersecret.co", "email": "hr@ownersecret.co",
@@ -248,6 +250,35 @@ class DashboardIsolationTests(unittest.TestCase):
         self.c.get("/logout")
         self.login(OWNER, "owner-pw")
         self.assertEqual(self.c.get("/guide").status_code, 200)
+
+    def test_member_run_now_has_an_hour_cooldown(self):
+        self.friend()
+        self.c.post("/settings/run/scrape")
+        self.assertEqual(len(self.dispatched), 1)
+        r = self.c.post("/settings/run/scrape", follow_redirects=True)
+        self.assertEqual(len(self.dispatched), 1, "second press within the hour is refused")
+        self.assertIn(b"once an hour", r.data)
+        page = self.c.get("/settings").data.decode()
+        self.assertNotIn('class="sm">Run scrape now</button>', page)
+        self.assertIn("Again at", page)
+        self.c.post("/settings/run/send")
+        self.assertEqual(len(self.dispatched), 2, "each pipeline has its own cooldown")
+
+    def test_run_now_refused_while_a_run_is_going_or_waiting(self):
+        self.friend()
+        self.busy = True
+        r = self.c.post("/settings/run/send", follow_redirects=True)
+        self.assertEqual(self.dispatched, [], "must not queue behind a run and bump a scheduled one")
+        self.assertIn(b"already running", r.data)
+        self.busy = False
+        self.c.post("/settings/run/send")
+        self.assertEqual(len(self.dispatched), 1, "a refused press doesn't start the cooldown")
+
+    def test_owner_has_no_cooldown(self):
+        self.login(OWNER, "owner-pw")
+        self.c.post("/settings/run/scrape"); self.c.post("/settings/run/scrape")
+        self.assertEqual(len(self.dispatched), 2)
+        self.assertNotIn("profile.json", self.fake.files, "owner never gets a root profile.json (tenant mode)")
 
     def test_people_page_is_owner_only(self):
         self.friend()

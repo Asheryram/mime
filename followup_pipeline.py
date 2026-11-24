@@ -157,6 +157,12 @@ def run_followups(limit=FOLLOWUP_DAILY_LIMIT, dry_run=False):
         print("No candidates to follow up with.")
         return
 
+    # Per day, not per run: follow-ups already sent today count against the cap.
+    from outreach_pipeline import sent_today
+    limit = max(0, limit - sent_today(load_queue(), "date_followup"))
+    if not limit:
+        print("Today's follow-up cap is already used; the rest go out tomorrow.")
+        return
     to_send = candidates[:limit]
     if len(candidates) > limit:
         print(f"Daily cap is {limit}; {len(candidates) - limit} candidates deferred to the next run.")

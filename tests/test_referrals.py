@@ -154,6 +154,8 @@ class DashboardTests(unittest.TestCase):
         self.fake.files["outreach_queue.csv"] = (",".join(F) + "\n" + ",".join(row[f] for f in F) + "\n").encode()
         self.dispatched = []
         state_repo.dispatch_workflow = lambda wf, inputs=None: self.dispatched.append((wf, inputs))
+        state_repo.pipeline_busy = lambda wfs: self.busy
+        self.busy = False
         self.c = webapp.app.test_client()
         with self.c.session_transaction() as s:
             s["authed"] = True

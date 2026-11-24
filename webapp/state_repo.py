@@ -356,6 +356,24 @@ def latest_run(workflow_file):
     }
 
 
+def pipeline_busy(workflow_files):
+    """
+    True if any of these workflows has a run queued, waiting or in progress.
+    They share one concurrency group, where GitHub keeps one run going and only
+    one waiting: a new run would replace the waiting one (possibly a scheduled
+    send), so a manual run is only started when nothing is running or waiting.
+    """
+    for wf in workflow_files:
+        r = requests.get(f"{API}/repos/{PIPELINE_REPO}/actions/workflows/{wf}/runs",
+                         headers=_headers(), params={"per_page": 5}, timeout=15)
+        if r.status_code in (403, 404):
+            raise TokenPermissionError(PIPELINE_REPO)
+        r.raise_for_status()
+        if any(run.get("status") != "completed" for run in r.json().get("workflow_runs", [])):
+            return True
+    return False
+
+
 def dispatch_workflow(workflow_file, inputs=None):
     body = {"ref": BRANCH}
     inputs = dict(inputs or {})
