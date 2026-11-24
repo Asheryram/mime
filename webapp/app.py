@@ -50,6 +50,7 @@ DAILY_SEND_LIMIT = 15
 SCRAPE_WORKFLOW = "scrape-pipeline.yml"
 SEND_WORKFLOW = "send-pipeline.yml"
 SEND_HOUR_UTC, SEND_MINUTE = 7, 23
+FOLLOWUP_AFTER_DAYS = 6  # followup_pipeline.FOLLOWUP_AFTER_DAYS; shown on How it works
 SEND_WEEKDAYS = {0, 1, 2, 3, 4}  # Mon-Fri, as in send-pipeline.yml's "23 7 * * 1-5"
 SCRAPE_EVERY_HOURS, SCRAPE_MINUTE = 6, 17
 SEARCHES_PER_RUN = 2  # outreach_pipeline.QUERIES_PER_RUN
@@ -141,7 +142,7 @@ def login_required(view):
     return wrapped
 
 
-def send_email(to_addr, subject, body):
+def send_email(to_addr, subject, body, html=None):
     sender = os.environ["SENDER_EMAIL"]
     password = os.environ["GMAIL_APP_PASSWORD"].replace(" ", "")
     msg = EmailMessage()
@@ -149,6 +150,8 @@ def send_email(to_addr, subject, body):
     msg["To"] = to_addr
     msg["Subject"] = subject
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=20) as smtp:
         smtp.ehlo()
@@ -2004,23 +2007,88 @@ def profile():
                            steps=setup_steps())
 
 
-def invite_email_body(link):
-    """The invite: what this is, the sign-up link, and what to have ready (with where to get each)."""
-    return (
-        "You've been invited to use Outbound, a job-application pipeline that finds companies, writes "
-        "tailored emails and cover letters, sends them from your own Gmail, and follows up for you.\n\n"
-        f"1. Create your account:\n{link}\n\n"
-        "2. Get these ready (about 10 minutes, all free to start). The Profile page walks you through each one:\n"
-        "   - A Gmail app password: turn on 2-Step Verification, then create one at\n"
-        "     https://myaccount.google.com/apppasswords\n"
-        "   - An Exa API key (finds companies; $10 free credit):\n"
-        "     https://dashboard.exa.ai/api-keys\n"
-        "   - An Apify API token (finds contact emails; $5 free each month):\n"
-        "     https://console.apify.com/settings/integrations\n"
-        "   - Your CV as a PDF, and a short cover letter for each kind of role you want.\n\n"
-        "3. After signing up, follow the Get set up checklist on the dashboard. Nothing is sent for you "
-        "until every step is done.\n"
+INVITE_KEYS = [
+    ("Gmail app password", "so emails go out from your own Gmail", "Free",
+     "https://myaccount.google.com/apppasswords", "Needs 2-Step Verification on your Google account."),
+    ("Exa API key", "finds companies that match your searches", "$10 free credit",
+     "https://dashboard.exa.ai/api-keys", ""),
+    ("Apify API token", "finds who to email at each company", "$5 free every month",
+     "https://console.apify.com/settings/integrations", ""),
+]
+
+
+def invite_email(link, guide_url):
+    """The invite as (plain text, HTML): what Outbound does, the sign-up button, and what to have ready."""
+    from html import escape
+    text = (
+        "You're invited to Outbound.\n\n"
+        "Outbound applies for jobs for you. It finds companies that match what you're looking for, "
+        "emails each one from your own Gmail with your CV and a cover letter written for that company, "
+        "follows up once if they don't reply, and tells you when someone answers. You only step in when "
+        "it needs a decision.\n\n"
+        f"CREATE YOUR ACCOUNT\n{link}\n\n"
+        "HAVE THESE READY (about 10 minutes, all free to start; the app walks you through each):\n"
+        + "".join(f"- {name}: {why} ({cost})\n  {url}\n" for name, why, cost, url, _ in INVITE_KEYS)
+        + "- Your CV as a PDF, and a short cover letter for each kind of role you want\n\n"
+        "WHAT HAPPENS NEXT\n"
+        "1. Sign up, then follow the Get set up checklist on your dashboard.\n"
+        "2. Write a few searches describing the companies you want.\n"
+        "3. That's it: it searches every 6 hours and sends on weekday mornings.\n\n"
+        f"How it all works (3-minute read): {guide_url}\n"
     )
+    ink, muted, line, accent = "#17181b", "#5b5e66", "#e4e4e0", "#c8450c"
+    font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+    keys = "".join(f"""
+<tr><td style="padding:12px 14px;border:1px solid {line};border-radius:10px;background:#ffffff">
+  <div style="font-size:15px;font-weight:600;color:{ink}">{escape(name)}
+    <span style="font-size:12px;font-weight:600;color:#15803d;margin-left:6px">{escape(cost)}</span></div>
+  <div style="font-size:13.5px;color:{muted};margin-top:2px;line-height:1.45">{escape(why[:1].upper() + why[1:])}.{(' ' + escape(note)) if note else ''}</div>
+  <div style="margin-top:6px"><a href="{escape(url)}" style="font-size:13.5px;font-weight:600;color:#2b5bd7;text-decoration:none">Get it here &rarr;</a></div>
+</td></tr><tr><td style="height:8px;font-size:0;line-height:8px">&nbsp;</td></tr>""" for name, why, cost, url, note in INVITE_KEYS)
+    steps = [("Search", "Finds companies that match what you describe, every 6 hours."),
+             ("Tailor", "Picks the right CV and writes a cover letter for each company."),
+             ("Send", "Emails them from your Gmail on weekday mornings, and follows up once."),
+             ("You decide", "Emails you only when it needs a decision, or someone replies.")]
+    how = "".join(f"""
+<tr><td style="padding:6px 0;vertical-align:top;width:28px">
+  <div style="width:22px;height:22px;border-radius:11px;background:{accent};color:#fff;font:700 12px/22px {font};text-align:center">{n}</div></td>
+<td style="padding:6px 0 6px 8px;font-size:14px;color:{ink};line-height:1.45"><b>{escape(t)}</b> <span style="color:{muted}">{escape(d)}</span></td></tr>"""
+                  for n, (t, d) in enumerate(steps, 1))
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>You're invited to Outbound</title></head>
+<body style="margin:0;padding:0;background:#f6f6f4">
+<div style="display:none;max-height:0;overflow:hidden">Your job applications, sent for you. Create your account in a minute.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f4">
+<tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;font-family:{font}">
+  <tr><td style="font-size:13px;color:{muted};padding-bottom:6px">Outbound</td></tr>
+  <tr><td style="font-size:26px;font-weight:700;color:{ink};line-height:1.25">You're invited</td></tr>
+  <tr><td style="font-size:15px;color:{muted};padding-top:8px;line-height:1.55">
+    Outbound applies for jobs for you: it finds companies that fit, emails each one from <b style="color:{ink}">your own Gmail</b>
+    with your CV and a cover letter written for that company, and follows up. You only step in when it needs a decision.</td></tr>
+  <tr><td style="padding:22px 0 4px">
+    <a href="{escape(link)}" style="display:inline-block;padding:13px 22px;background:{accent};color:#ffffff;border-radius:8px;font-weight:600;font-size:15px;text-decoration:none">Create your account</a></td></tr>
+  <tr><td style="font-size:12.5px;color:{muted};padding-top:6px">Only works for this email address.</td></tr>
+
+  <tr><td style="padding:28px 0 8px"><div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:{accent}">How it works</div></td></tr>
+  <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{how}</table></td></tr>
+
+  <tr><td style="padding:26px 0 4px"><div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:{accent}">Have these ready</div>
+    <div style="font-size:14px;color:{muted};margin-top:4px;line-height:1.45">About 10 minutes, all free to start. The app shows step-by-step instructions for each one, so you can also do this after signing up.</div></td></tr>
+  <tr><td style="padding-top:10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{keys}
+    <tr><td style="padding:12px 14px;border:1px solid {line};border-radius:10px;background:#ffffff">
+      <div style="font-size:15px;font-weight:600;color:{ink}">Your CV and cover letter</div>
+      <div style="font-size:13.5px;color:{muted};margin-top:2px;line-height:1.45">Your CV as a PDF, and a short cover letter for each kind of role you want (for example frontend and full-stack). You'll upload them on the Roles page.</div>
+    </td></tr></table></td></tr>
+
+  <tr><td style="padding:24px 0 0;font-size:14px;color:{ink};line-height:1.55">
+    After signing up, follow the <b>Get set up</b> checklist on your dashboard. Nothing is sent for you until every step is done.</td></tr>
+  <tr><td style="padding:10px 0 0;font-size:14px"><a href="{escape(guide_url)}" style="color:#2b5bd7;font-weight:600;text-decoration:none">Read how it all works (3 minutes) &rarr;</a></td></tr>
+  <tr><td style="padding:28px 0 0;font-size:12px;color:{muted};border-top:1px solid {line}">
+    <div style="padding-top:12px">If the button doesn't work, paste this into your browser:<br><span style="color:{ink};word-break:break-all">{escape(link)}</span></div></td></tr>
+</table></td></tr></table></body></html>"""
+    return text, html
 
 
 def invite_send_failure(e):
@@ -2037,6 +2105,14 @@ def invite_send_failure(e):
 
 
 # --- People (owner only) ---------------------------------------------------------------
+
+@app.route("/guide")
+@login_required
+def guide():
+    _, nav = load_data()
+    return render_template("guide.html", active="guide", nav=nav, send_hour=SEND_HOUR_UTC, send_minute=SEND_MINUTE,
+                           daily_limit=DAILY_SEND_LIMIT, followup_days=FOLLOWUP_AFTER_DAYS)
+
 
 @app.route("/people", methods=["GET", "POST"])
 @login_required
@@ -2056,7 +2132,8 @@ def people():
                 db.add_invite(email, datetime.now(timezone.utc).isoformat())
                 link = url_for("signup", email=email, _external=True)
                 try:
-                    send_email(email, "You're invited to Outbound", invite_email_body(link))
+                    text, html = invite_email(link, url_for("guide", _external=True))
+                    send_email(email, "You're invited to Outbound: your job applications, on autopilot", text, html)
                     flash(f"Invited {email}. They've been emailed a sign-up link.", "success")
                 except (KeyError, smtplib.SMTPException, OSError) as e:
                     reason = invite_send_failure(e)
