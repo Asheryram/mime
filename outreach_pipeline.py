@@ -805,7 +805,15 @@ def run_send_emails():
         print("[Pipeline] Nothing sendable: every approved row is on a held track.")
         return
 
-    to_send = sendable[:DAILY_SEND_LIMIT]
+    # The cap is per day, not per run: a second "Send now" the same day only
+    # sends what's left of today's allowance, so Gmail never sees a burst.
+    already = sent_today(queue)
+    allowance = max(0, DAILY_SEND_LIMIT - already)
+    if not allowance:
+        print(f"[Pipeline] Already sent {already} today (the daily cap is {DAILY_SEND_LIMIT}). "
+              f"The rest go out on the next run tomorrow.")
+        return
+    to_send = sendable[:allowance]
     print(f"[Pipeline] Starting outreach run: sending {len(to_send)} of {len(approved)} approved emails...")
 
     # Check the login once before touching any row: a bad app password would
@@ -1022,6 +1030,12 @@ def checkin_due(r, today=None):
     today = today or datetime.now().strftime("%Y-%m-%d")
     return (r.get("outcome") == "later" and not r.get("checkback_status")
             and bool(r.get("checkback_date")) and r["checkback_date"] <= today)
+
+
+def sent_today(queue, field="date_sent"):
+    """How many rows were sent today (by `field`, which holds "%Y-%m-%d %H:%M:%S" in runner time)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    return sum(1 for r in queue if (r.get(field) or "").startswith(today))
 
 
 def log_outreach(row, status):

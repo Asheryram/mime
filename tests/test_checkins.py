@@ -128,6 +128,8 @@ class DashboardTests(unittest.TestCase):
         self.set_row(later_row(outcome="", outcome_date="", checkback_date="", replied=""))
         self.dispatched = []
         state_repo.dispatch_workflow = lambda wf, inputs=None: self.dispatched.append((wf, inputs))
+        state_repo.pipeline_busy = lambda wfs: self.busy
+        self.busy = False
         self.c = webapp.app.test_client()
         with self.c.session_transaction() as s:
             s["authed"] = True

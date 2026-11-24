@@ -1050,7 +1050,10 @@ def company_referral(slug):
             return redirect(back)
         if action == "send_now":
             try:
-                state_repo.dispatch_workflow(SEND_WORKFLOW, {"mode": "referrals"})
+                start_send_now()
+            except PipelineBusy:
+                flash(f"Queued. The pipeline is busy right now, so it goes out with the next send "
+                      f"({next_send_run(utcnow()):%a %H:%M}), or press Send now again in a few minutes.", "success")
             except state_repo.TokenPermissionError:
                 flash(f"Queued, but GitHub refused to start a send now, so it goes out with the next send "
                       f"({next_send_run(utcnow()):%a %H:%M}). Give your GITHUB_TOKEN Actions: Read and write to fix.", "error")
@@ -1249,7 +1252,10 @@ def company_reply(slug):
             flash("There's no check-in due for this company.", "error")
         else:
             try:
-                state_repo.dispatch_workflow(SEND_WORKFLOW, {"mode": "referrals"})
+                start_send_now()
+            except PipelineBusy:
+                flash(f"Approved. The pipeline is busy right now, so the check-in goes out with the next send "
+                      f"({next_send_run(utcnow()):%a %H:%M}).", "success")
             except state_repo.TokenPermissionError:
                 flash(f"Queued, but GitHub refused to start a send now, so it goes out with the next send "
                       f"({next_send_run(utcnow()):%a %H:%M}).", "error")
@@ -1397,6 +1403,7 @@ def settings():
         send_url=state_repo.actions_url(SEND_WORKFLOW),
         next_send=next_send_run(utcnow()), next_scrape=next_scrape_run(utcnow()),
         pipeline_repo=state_repo.PIPELINE_REPO,
+        cooldown={w: run_cooldown_left(w) for w in ("scrape", "send")}, daily_limit=DAILY_SEND_LIMIT,
     )
 
 
@@ -1414,6 +1421,39 @@ def settings_queries():
     return redirect(url_for("settings") + "#queries")
 
 
+class PipelineBusy(Exception):
+    """A run is already going or waiting; starting another could bump a scheduled one."""
+
+
+def start_send_now():
+    if state_repo.pipeline_busy([SCRAPE_WORKFLOW, SEND_WORKFLOW]):
+        raise PipelineBusy()
+    state_repo.dispatch_workflow(SEND_WORKFLOW, {"mode": "referrals"})
+
+
+RUN_COOLDOWN = timedelta(hours=1)
+
+
+def run_cooldown_left(which):
+    """For an invited user, when they may press Run now again (None if they may now). The owner has no cooldown."""
+    if not state_repo.current_tenant():
+        return None
+    last = (safe_call(state_repo.get_profile, fallback={}) or {}).get("last_manual_run", {}).get(which)
+    try:
+        ready = datetime.fromisoformat(last) + RUN_COOLDOWN
+    except (TypeError, ValueError):
+        return None
+    return ready if ready > utcnow() else None
+
+
+def note_manual_run(which):
+    if not state_repo.current_tenant():
+        return
+    prof = state_repo.get_profile()
+    prof.setdefault("last_manual_run", {})[which] = utcnow().isoformat(timespec="seconds")
+    state_repo.save_profile(prof, f"Run {which} now")
+
+
 @app.route("/settings/run/<which>", methods=["POST"])
 @login_required
 def settings_run(which):
@@ -1425,7 +1465,16 @@ def settings_run(which):
         flash("Your pipeline is paused by the dashboard's owner, so nothing will run. Ask them to resume it.",
               "error")
         return redirect(url_for("settings"))
+    wait = run_cooldown_left(which)
+    if wait:
+        flash(f"You can run {which} again at {wait:%H:%M} GMT (once an hour). It also runs on its own schedule.",
+              "error")
+        return redirect(url_for("settings"))
     try:
+        if state_repo.pipeline_busy([SCRAPE_WORKFLOW, SEND_WORKFLOW]):
+            flash("The pipeline is already running or about to. Try again in a few minutes, once it's finished.",
+                  "error")
+            return redirect(url_for("settings"))
         state_repo.dispatch_workflow(workflow)
     except state_repo.TokenPermissionError:
         flash(
@@ -1433,6 +1482,7 @@ def settings_run(which):
             f"Actions: Read and write on {state_repo.PIPELINE_REPO}.", "error",
         )
     else:
+        note_manual_run(which)
         label = "Scrape" if which == "scrape" else "Send"
         flash(f"{label} started. It takes a few minutes; refresh this page to see the result.", "success")
     return redirect(url_for("settings"))

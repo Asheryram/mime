@@ -6,20 +6,20 @@
 {% block content %}
 <section class="panel card-box" id="pipeline">
   <div class="panel-head"><h2>Run the pipeline now</h2></div>
-  <p class="hint">Both run on a schedule anyway. Use these when you don't want to wait: after changing the searches, or after fixing a batch of leads you want out today.</p>
+  <p class="hint">Both run on a schedule anyway. Use these when you don't want to wait: after changing the searches, or after fixing a batch of leads you want out today. Sending never goes over {{ daily_limit }} emails a day, however many times you run it{% if is_member %}, and each can be run once an hour{% endif %}.</p>
   <div class="pipe">
     <div class="pipe-row">
       <div><div class="pipe-name">Scrape</div><div class="pipe-sched">Searches for new companies and finds their emails. Every 6 hours; next {{ next_scrape|when }} UTC.</div></div>
       <form method="post" action="{{ url_for('settings_run', which='scrape') }}" class="inline">
-        <button type="submit" class="sm">Run scrape now</button>
+        {% if cooldown.scrape %}<span class="small muted">Again at {{ cooldown.scrape.strftime('%H:%M') }}</span>{% else %}<button type="submit" class="sm">Run scrape now</button>{% endif %}
       </form>
       <div class="pipe-last">Last run: {{ run_status(scrape_run, pipeline_repo) }} &middot; <a href="{{ scrape_url }}" target="_blank" rel="noopener">all runs</a></div>
     </div>
     <div class="pipe-row">
-      <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails everything in Up next (15 max) and due follow-ups. Weekdays at 07:23; next {{ next_send|when }} UTC.</div></div>
+      <div><div class="pipe-name">Send</div><div class="pipe-sched">Emails Up next (up to {{ daily_limit }} a day) and due follow-ups. Weekdays at 07:23; next {{ next_send|when }} UTC.</div></div>
       <form method="post" action="{{ url_for('settings_run', which='send') }}" class="inline"
             onsubmit="return confirm('This emails real companies right now. Send everything in Up next?');">
-        <button type="submit" class="sm">Send now</button>
+        {% if cooldown.send %}<span class="small muted">Again at {{ cooldown.send.strftime('%H:%M') }}</span>{% else %}<button type="submit" class="sm">Send now</button>{% endif %}
       </form>
       <div class="pipe-last">Last run: {{ run_status(send_run, pipeline_repo) }} &middot; <a href="{{ send_url }}" target="_blank" rel="noopener">all runs</a></div>
     </div>
