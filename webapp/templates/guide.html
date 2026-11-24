@@ -1,0 +1,103 @@
+{% extends "base_app.html" %}
+{% block title %}How it works · Outbound{% endblock %}
+{% block page_title %}How it works{% endblock %}
+{% block page_sub %}Everything you need to use Outbound, in about three minutes. Come back any time from the sidebar.{% endblock %}
+{% block content %}
+<style>
+  .guide { max-width: 860px; }
+  .guide h2 { font-size: 15px; margin-bottom: 10px; }
+  .guide p, .guide li { color: var(--fg-2); font-size: 13.5px; line-height: 1.65; }
+  .guide b { color: var(--fg); font-weight: 600; }
+  .loop { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  .loop li { counter-increment: s; position: relative; padding: 0 0 14px 40px; }
+  .loop li::before {
+    content: counter(s); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center; font: 600 12px var(--mono); background: var(--surface-3); color: var(--fg);
+  }
+  .loop li.you::before { background: var(--accent); color: var(--accent-fg); }
+  .when { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); margin-left: 6px; white-space: nowrap; }
+  .tag-you { font-size: 11px; font-weight: 600; color: var(--accent); margin-left: 6px; }
+  .pages { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0; font-size: 13.5px; }
+  .pages dt a { font-weight: 600; }
+  .pages dd { margin: 0; color: var(--fg-2); }
+  .faq details { border-top: 1px solid var(--border); padding: 10px 0; }
+  .faq details:first-of-type { border-top: 0; padding-top: 0; }
+  .faq summary { cursor: pointer; font-weight: 500; color: var(--fg); font-size: 13.5px; }
+  .faq details p { margin: 6px 0 0; }
+  pre.ex { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; margin: 8px 0 0; }
+</style>
+<div class="guide">
+
+<section class="panel card-box">
+  <div class="panel-head"><h2>The short version</h2></div>
+  <p>Outbound finds companies that match what you're looking for, finds who to email there, and sends each one a short email from <b>your own Gmail</b> with <b>your CV and a cover letter written for that company</b>. If they don't reply, it follows up once. It runs on its own; you only step in when it emails you that something <b>needs you</b>, or when a company writes back.</p>
+</section>
+
+<section class="panel card-box">
+  <div class="panel-head"><h2>What happens, in order</h2></div>
+  <ol class="loop">
+    <li><b>Search</b><span class="when">every 6 hours</span><br>Each line on your <a href="{{ url_for('settings') }}#queries">Settings</a> page is a search. New companies that match are added to your list; ones you've already got are skipped.</li>
+    <li><b>Find an email</b><span class="when">same run</span><br>It looks on each company's website for a careers or contact address, and rejects ones that look wrong (personal, no-reply, someone else's domain).</li>
+    <li><b>Pick a role</b><span class="when">same run</span><br>It reads the company's site and picks which of your <a href="{{ url_for('roles') }}">Roles</a> fits best, so a frontend shop gets your frontend pitch and CV.</li>
+    <li class="you"><b>Ask you when it isn't sure</b><span class="tag-you">YOU</span><br>If it couldn't find an email, the company name looks odd, or no role clearly fits, that company waits on <a href="{{ url_for('attention') }}">Needs you</a> instead of being sent on a guess, and you get <b>one email</b> listing them, each with a <b>Fix</b> button. Each takes under a minute.</li>
+    <li><b>Send</b><span class="when">weekdays at {{ "%02d:%02d"|format(send_hour, send_minute) }} GMT</span><br>Up to {{ daily_limit }} a day, from your Gmail, each with the right CV and a cover letter addressed to that company. The rest wait for the next weekday; see them on <a href="{{ url_for('upcoming') }}">Up next</a>.</li>
+    <li><b>Follow up once</b><span class="when">after {{ followup_days }} days</span><br>No reply after {{ followup_days }} days? One short, polite follow-up goes out in the same thread. Never more than one.</li>
+    <li><b>Notice replies</b><span class="when">every 6 hours</span><br>It checks your inbox (read-only) for replies and bounces, and stops following up with anyone who answered.</li>
+    <li class="you"><b>You reply</b><span class="tag-you">YOU</span><br>When a company writes back, answer them yourself in Gmail like any email. Then open the company on <a href="{{ url_for('sent') }}">Awaiting reply</a> and record what they said (see below), so the system knows what to do next.</li>
+  </ol>
+</section>
+
+<section class="panel card-box">
+  <div class="panel-head"><h2>When a company writes back</h2></div>
+  <p>Open the company and choose what they said:</p>
+  <ul>
+    <li><b>Interview / next steps:</b> nothing automatic is sent; it's yours from here.</li>
+    <li><b>Not hiring now: check back later:</b> pick when (e.g. 3 months). On that date it emails you a drafted check-in to read and send.</li>
+    <li><b>Not interested:</b> it's closed and nothing more is sent to them.</li>
+    <li><b>They referred me</b> to someone else: enter the new address and choose to send your CV, cover letter or both. You'll see the email before it goes.</li>
+  </ul>
+  <p>Don't want a company emailed at all? Open it and use <b>Don't email this one</b>. It stays out for good, even if a search finds it again.</p>
+</section>
+
+<section class="panel card-box">
+  <div class="panel-head"><h2>Writing good searches</h2></div>
+  <p>One search per line on <a href="{{ url_for('settings') }}#queries">Settings</a>: <b>what to look for | how many (1–25) | which role</b>.</p>
+  <pre class="ex">fintech startups in Accra with in-house engineering teams | 10 | frontend
+remote-first SaaS companies hiring platform engineers in Europe | 15 | devops
+healthtech companies in Nairobi building patient apps | 8 | fullstack</pre>
+  <p style="margin-top:10px">Describe the <b>companies</b>, not the job title: industry, place, what they build. Specific beats broad: "logistics startups in Lagos" finds better fits than "tech companies". The role is only a starting guess; it still checks each company's site. Start with 3–5 searches and adjust after a week, based on who replies.</p>
+</section>
+
+<section class="panel card-box">
+  <div class="panel-head"><h2>The pages</h2></div>
+  <dl class="pages">
+    <dt><a href="{{ url_for('overview') }}">Overview</a></dt><dd>How it's going: sent, replies, next runs.</dd>
+    <dt><a href="{{ url_for('attention') }}">Needs you</a></dt><dd>The only page that needs you regularly. Its count turns orange when something's waiting.</dd>
+    <dt><a href="{{ url_for('upcoming') }}">Up next</a></dt><dd>Ready to go out on the next weekday send.</dd>
+    <dt><a href="{{ url_for('sent') }}">Awaiting reply</a></dt><dd>Emailed companies; open one to record a reply.</dd>
+    <dt><a href="{{ url_for('companies_list') }}">Companies</a></dt><dd>Everything, searchable. Add a company by hand with <b>Add company</b>.</dd>
+    <dt><a href="{{ url_for('roles') }}">Roles</a></dt><dd>Each kind of job you apply for: its CV, cover letter and pitch. Turn a role off to stop sending it.</dd>
+    <dt><a href="{{ url_for('settings') }}">Settings</a></dt><dd>Your searches, and <b>Run now</b> if you don't want to wait for the schedule.</dd>
+    {% if is_member %}<dt><a href="{{ url_for('profile') }}">Profile</a></dt><dd>Your name, contact details and keys (Gmail, Exa, Apify).</dd>{% endif %}
+    <dt><a href="{{ url_for('activity') }}">Activity</a></dt><dd>A log of every change, by you or the pipeline.</dd>
+  </dl>
+</section>
+
+<section class="panel card-box faq">
+  <div class="panel-head"><h2>If something's not working</h2></div>
+  <details><summary>Nothing has been sent yet</summary>
+    <p>{% if is_member %}Check the <b>Get set up</b> list on <a href="{{ url_for('overview') }}">Overview</a>: nothing sends until every step is ticked. {% endif %}Then check <a href="{{ url_for('upcoming') }}">Up next</a>: if companies are there, they go out on the next weekday at {{ "%02d:%02d"|format(send_hour, send_minute) }} GMT. If it's empty, look at <a href="{{ url_for('attention') }}">Needs you</a>, or make your searches more specific.</p></details>
+  <details><summary>It says Gmail rejected my password</summary>
+    <p>Make a new app password at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a> (signed in to the Gmail you send from), paste it on {% if is_member %}<a href="{{ url_for('profile') }}#keys">Profile</a>{% else %}your secrets{% endif %}, and use <b>Test Gmail login</b>. Changing your Google password cancels old app passwords.</p></details>
+  <details><summary>Searches find nothing, or emails aren't being found</summary>
+    <p>Usually your free credit has run out. Check <a href="https://dashboard.exa.ai/billing" target="_blank" rel="noopener">Exa billing</a> (searching) and <a href="https://console.apify.com/billing" target="_blank" rel="noopener">Apify billing</a> (finding emails; the free $5 resets monthly). Otherwise, make searches more specific.</p></details>
+  <details><summary>It sent a company the wrong role</summary>
+    <p>Add clearer keywords to each role on <a href="{{ url_for('roles') }}">Roles</a>, so companies match the right one. For a company not yet sent, open it and change its role.</p></details>
+  <details><summary>I want to stop for a while</summary>
+    <p>Turn your roles off on <a href="{{ url_for('roles') }}">Roles</a>. Nothing sends until you turn one back on; everything else is kept.</p></details>
+  <details><summary>Can anyone else see my companies or keys?</summary>
+    <p>No. {% if is_member %}Your workspace is yours alone: other users can't see it. Your keys are stored encrypted and never shown again, not even to you.{% else %}Each invited user has a separate workspace.{% endif %}</p></details>
+</section>
+
+</div>
+{% endblock %}

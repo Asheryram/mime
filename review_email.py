@@ -199,6 +199,7 @@ def build(rows, known_tracks, dashboard_url="", earlier_waiting=0):
     Nothing goes out to these until you act. Each takes under a minute.</td></tr>
   {''.join(sections)}
   {cta}
+  {f'<tr><td style="padding-top:14px;font-size:13px;color:{MUTED}">New to this? <a href="{escape(base)}/guide" style="color:{MUTED}">How Outbound works</a></td></tr>' if base else ''}
   {earlier}
   <tr><td style="padding-top:28px;font-size:12px;color:{MUTED};line-height:1.5;border-top:1px solid {LINE}">
     Sent after a scrape found leads it couldn't finish. Each company appears in one of these emails only;

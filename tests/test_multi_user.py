@@ -225,13 +225,29 @@ class DashboardIsolationTests(unittest.TestCase):
             self.assertIn(url, page)
         self.c.get("/logout")
         sent = []
-        with mock.patch.object(self.app, "send_email", side_effect=lambda to, subj, body: sent.append(body)):
+        with mock.patch.object(self.app, "send_email",
+                               side_effect=lambda to, subj, body, html=None: sent.append((body, html))):
             self.login(OWNER, "owner-pw")
             self.c.post("/people", data={"action": "invite", "email": "keren@gmail.com"})
         self.assertEqual(len(sent), 1)
-        self.assertIn("signup?email=keren", sent[0])
-        for url in ("myaccount.google.com/apppasswords", "dashboard.exa.ai/api-keys", "console.apify.com/settings/integrations"):
-            self.assertIn(url, sent[0])
+        for part in sent[0]:
+            self.assertIn("signup?email=keren", part)
+            self.assertIn("/guide", part)
+            for url in ("myaccount.google.com/apppasswords", "dashboard.exa.ai/api-keys",
+                        "console.apify.com/settings/integrations"):
+                self.assertIn(url, part)
+        self.assertTrue(sent[0][1].lstrip().startswith("<!doctype html>"))
+
+    def test_how_it_works_page_for_members_and_owner(self):
+        self.friend()
+        page = self.c.get("/guide").data.decode()
+        self.assertIn("What happens, in order", page)
+        self.assertIn("07:23 GMT", page)
+        self.assertIn("Profile", page)
+        self.assertIn('href="/guide"', self.c.get("/profile").data.decode(), "setup checklist links the guide")
+        self.c.get("/logout")
+        self.login(OWNER, "owner-pw")
+        self.assertEqual(self.c.get("/guide").status_code, 200)
 
     def test_people_page_is_owner_only(self):
         self.friend()
@@ -382,6 +398,32 @@ class FriendModeTests(InTempDir):
         write_file("tracks.json", json.dumps(t).encode())
         _, op, _ = self.reload_pipeline()
         self.assertEqual(op.load_search_queries(), [])
+
+    def test_a_friend_gets_their_own_needs_you_email(self):
+        # No email found and an odd company name: the friend is told, at their
+        # own address, with Fix links into the dashboard, and the How it works link.
+        self.write_friend()
+        env = {"SENDER_EMAIL": FRIEND, "APPLICANT_EMAIL": FRIEND, "DASHBOARD_URL": "https://sage-apply.vercel.app"}
+        with mock.patch.dict(os.environ, env):
+            applicant, op, _ = self.reload_pipeline()
+            import smtp_client
+            fake = FakeSMTP(); fake.install(smtp_client)
+            write_queue(op, [
+                {"company_name": "Lagos Co", "website": "https://lagos.co", "email": "no_email_found",
+                 "status": "Skipped", "track": "frontend"},
+                {"company_name": "Home | Welcome", "website": "https://odd.io", "email": "", "status": "Review",
+                 "track": "frontend"},
+            ])
+            op.run_notify_needs_review()
+        self.assertEqual(len(fake.sent), 1)
+        to, msg = fake.sent[0]
+        self.assertEqual(to, FRIEND)
+        self.assertEqual(msg["From"], FRIEND)
+        html = msg.get_body(("html",)).get_content()
+        self.assertIn("Lagos Co", html)
+        self.assertIn("Home | Welcome", html)
+        self.assertIn("https://sage-apply.vercel.app/attention", html)
+        self.assertIn("https://sage-apply.vercel.app/guide", html)
 
     def test_a_friend_send_carries_nothing_of_the_owner(self):
         self.write_friend()

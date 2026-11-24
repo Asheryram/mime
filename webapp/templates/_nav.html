@@ -25,6 +25,7 @@
   <a href="{{ url_for('roles') }}" class="nav-item {{ 'active' if active == 'roles' }}">{{ icon("companies") }} Roles</a>
   <a href="{{ url_for('activity') }}" class="nav-item {{ 'active' if active == 'activity' }}">{{ icon("activity") }} Activity</a>
   <a href="{{ url_for('settings') }}" class="nav-item {{ 'active' if active == 'settings' }}">{{ icon("settings") }} Settings</a>
+  <a href="{{ url_for('guide') }}" class="nav-item {{ 'active' if active == 'guide' }}">{{ icon("activity") }} How it works</a>
   {% if is_member %}<a href="{{ url_for('profile') }}" class="nav-item {{ 'active' if active == 'profile' }}">{{ icon("settings") }} Profile</a>{% endif %}
   {% if is_owner_user %}<a href="{{ url_for('people') }}" class="nav-item {{ 'active' if active == 'people' }}">{{ icon("companies") }} People</a>{% endif %}
 
