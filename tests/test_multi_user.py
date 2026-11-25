@@ -440,8 +440,8 @@ class FriendModeTests(InTempDir):
             import smtp_client
             fake = FakeSMTP(); fake.install(smtp_client)
             write_queue(op, [
-                {"company_name": "Lagos Co", "website": "https://lagos.co", "email": "no_email_found",
-                 "status": "Skipped", "track": "frontend"},
+                {"company_name": "Lagos Co", "website": "https://lagos.co", "email": "",
+                 "status": "Review", "track": "frontend"},
                 {"company_name": "Home | Welcome", "website": "https://odd.io", "email": "", "status": "Review",
                  "track": "frontend"},
             ])

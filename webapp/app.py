@@ -369,8 +369,14 @@ def bucket_of(c):
     s = c["status"]
     if s in ("Sent", "Followup-Sent") and checkin_due(c):
         return "attention"
-    if s in ("Review", "Failed") or (s == "Skipped" and not has_email(c)):
+    if s in ("Review", "Failed"):
         return "attention"
+    if s == "Skipped" and not has_email(c):
+        # No public email: about half of small companies publish none, and there's
+        # usually nothing to do but reach them another way. They're kept under
+        # Companies → Skipped (add an email there when you find one) rather than
+        # filling Needs you with things you can't act on.
+        return "noemail"
     if s in ("Pending", "Approved") and (is_yes(c.get("role_review")) or role_missing(c)):
         return "attention"
     if s in ("Pending", "Approved") and has_email(c):
