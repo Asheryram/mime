@@ -682,11 +682,12 @@ def run_notify_needs_review():
     every scrape run - fix it (or ignore it) in the dashboard or the CSV.
     """
     queue = load_queue()
+    # "Skipped" (no email found) rows aren't included: they wait under
+    # Companies → Skipped, since usually there's nothing to fix.
     needs_review = [
         r for r in queue
         if r.get("review_notified", "").strip().lower() != "yes"
-        and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found")
-             or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
+        and (r["status"] == "Review" or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
     ]
     # Companies that said "not now" whose check-back date has come: once each
     # (their own flag, since review_notified may be set from long ago).
@@ -702,8 +703,7 @@ def run_notify_needs_review():
     earlier = [
         r for r in queue
         if r.get("review_notified", "").strip().lower() == "yes"
-        and (r["status"] == "Review" or (r["status"] == "Skipped" and r["email"] == "no_email_found")
-             or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
+        and (r["status"] == "Review" or (r["status"] in ("Pending", "Approved") and needs_role_choice(r)))
     ]
     count = len(needs_review)
     subject, text, html = review_email.build(

@@ -236,20 +236,30 @@ class NotifyEmailTests(InTempDir):
         os.environ["DASHBOARD_URL"] = "https://dash.example.com"
         try:
             write_queue(op, [
-                {"company_name": "Kraado", "website": "https://kraado.com", "status": "Skipped",
-                 "email": "no_email_found"},
+                {"company_name": "Kraado", "website": "https://kraado.com", "status": "Review", "email": ""},
                 {"company_name": "Old One", "website": "https://old.com", "status": "Review", "review_notified": "yes"},
+                # No public email: kept under Companies → Skipped, never emailed about.
+                {"company_name": "Quiet Co", "website": "https://quiet.co", "status": "Skipped",
+                 "email": "no_email_found"},
             ])
             op.run_notify_needs_review()
         finally:
             del os.environ["DASHBOARD_URL"]
         msg = fake.sent[0][1]
-        self.assertEqual(msg["Subject"], "1 company needs you: 1 missing an email")
+        self.assertEqual(msg["Subject"], "1 company needs you: 1 with an unclear name")
         html = msg.get_body(preferencelist=("html",)).get_content()
         self.assertIn("https://dash.example.com/attention?focus=kraado", html)
+        self.assertNotIn("Quiet Co", html)
         self.assertIn("Plus 1 from earlier", msg.get_body(preferencelist=("plain",)).get_content())
         self.assertEqual({r["company_name"]: r["review_notified"] for r in op.load_queue()},
-                         {"Kraado": "yes", "Old One": "yes"})
+                         {"Kraado": "yes", "Old One": "yes", "Quiet Co": ""})
+
+    def test_no_email_companies_stay_out_of_needs_you(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "webapp"))
+        import app as webapp
+        row = {"status": "Skipped", "email": "no_email_found", "track": "devops"}
+        self.assertEqual(webapp.bucket_of(row), "noemail")
+        self.assertEqual(webapp.bucket_of(dict(row, status="Review", email="")), "attention")
 
 
 class DashboardTests(unittest.TestCase):
